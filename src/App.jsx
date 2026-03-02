@@ -390,8 +390,14 @@ function reducer(st, a) {
       const msgs=st.kids[a.kidId].messages.map(m=>({...m,read:true}));
       return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], messages:msgs } } };
     }
-
-    case "SET_WEEKLY_GOAL": return { ...st, weeklyGoal:{ target:a.target, current:st.weeklyGoal?.current??0 }, modal:null, toast:"🎯 Meta semanal guardada" };
+    case "EDIT_MESSAGE": {
+      const msgs=st.kids[a.kidId].messages.map(m=>m.id===a.messageId?{...m,text:a.text}:m);
+      return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], messages:msgs } }, modal:null, toast:"✅ Mensaje actualizado" };
+    }
+    case "DELETE_MESSAGE": {
+      const msgs=st.kids[a.kidId].messages.filter(m=>m.id!==a.messageId);
+      return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], messages:msgs } }, modal:null, toast:"🗑️ Mensaje eliminado" };
+    }
 
     case "ADD_CHALLENGE": {
       const ch={ id:Date.now(), ...a.challenge, myCount:0, theirCount:0, winner:null };
@@ -841,7 +847,6 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData }
             🔔 Activar notificaciones — recibirás avisos cuando papá/mamá apruebe tus tareas
           </button>
         )}
-        <HomeWidget kid={kid} kidId={kidId} tasks={st.tasks}/>
         {st.childTab==="hoy"       && <ChildToday kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} mult={mult}/>}
         {st.childTab==="mensajes"  && <ChildMensajes kidId={kidId} kid={kid} th={th} dispatch={dispatch}/>}
         {st.childTab==="logros"    && <ChildLogros kid={kid} kidId={kidId} as={as} th={th}/>}
@@ -1299,6 +1304,7 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData 
   const tabs=[
     {id:"notifs",icon:"🔔",label:"Alertas",badge:pendingN.length},
     {id:"tareas",icon:"📋",label:"Tareas"},
+    {id:"mensajes",icon:"💬",label:"Mensajes"},
     {id:"dinero",icon:"💶",label:"Dinero"},
     {id:"ranking",icon:"🏆",label:"Ranking"},
     {id:"config",icon:"⚙️",label:"Config"},
@@ -1346,22 +1352,10 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData 
             🔔 Activar notificaciones — recibirás avisos cuando los niños completen tareas
           </button>
         )}
-        {/* Weekly Goal */}
-        <div className="card" style={{border:`2px solid ${th.p}44`,background:`${th.p}09`}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <span style={{fontWeight:900,fontSize:13}}>🎯 Meta semanal</span>
-            <button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"weeklyGoal"}})}
-              style={{background:th.p,border:"none",borderRadius:10,padding:"4px 12px",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:12,color:"#fff"}}>Editar</button>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:700,color:"#666",marginBottom:4}}>
-            <span>Tareas esta semana</span><span>{st.weeklyGoal.current}/{st.weeklyGoal.target}</span>
-          </div>
-          <ProgressBar value={st.weeklyGoal.current} max={st.weeklyGoal.target} color={`linear-gradient(90deg,${th.p},${th.a})`} height={10}/>
-          {st.weeklyGoal.current>=st.weeklyGoal.target&&<div style={{textAlign:"center",fontWeight:900,color:"#4A7A1E",marginTop:6}}>🎉 ¡Meta alcanzada!</div>}
-        </div>
 
         {st.parentTab==="notifs"   && <ParentNotifs st={st} dispatch={dispatch} parentRole={parentRole}/>}
         {st.parentTab==="tareas"   && <ParentTareas st={st} dispatch={dispatch}/>}
+        {st.parentTab==="mensajes" && <ParentMensajesYGratitud st={st} dispatch={dispatch}/>}
         {st.parentTab==="dinero"   && <ParentDinero st={st} dispatch={dispatch}/>}
         {st.parentTab==="ranking"  && <ParentRanking st={st} dispatch={dispatch}/>}
         {st.parentTab==="config"   && <ParentConfig st={st} dispatch={dispatch} parentRole={parentRole} currentParent={currentParent}/>}
@@ -1445,6 +1439,68 @@ function ParentNotifs({ st, dispatch, parentRole }) {
           <div style={{fontSize:12,color:"#888",marginTop:4}}>{n.time}</div>
         </div>
       ))}
+    </>
+  );
+}
+
+// ─── PARENT MENSAJES Y GRATITUD ─────────────────────────────────
+function ParentMensajesYGratitud({ st, dispatch }) {
+  return (
+    <>
+      <div className="card" style={{marginBottom:12}}>
+        <h3 style={{fontWeight:900,marginBottom:4}}>💬 Centro de mensajes</h3>
+        <p style={{fontSize:12,color:"#666",marginBottom:14}}>Mensajes enviados a los niños (y motivos de rechazo). Podéis editar o eliminar cualquiera.</p>
+        {["jose","david"].map(id=>{
+          const k=st.kids[id];
+          const msgs=[...(k.messages||[])].reverse();
+          const kth=TH[id];
+          return (
+            <div key={id} style={{marginBottom:20}}>
+              <div style={{fontWeight:900,fontSize:13,color:kth.a,marginBottom:8}}>{id==="jose"?"👦🏻 José":"👦 David"}</div>
+              {msgs.length===0 ? (
+                <div style={{fontSize:12,color:"#aaa",padding:"8px 0"}}>Sin mensajes</div>
+              ) : (
+                msgs.map(m=>(
+                  <div key={m.id} style={{background:"#f9f9f9",borderRadius:12,padding:"12px 14px",marginBottom:8,border:"1px solid #eee"}}>
+                    <div style={{fontSize:11,color:"#888",marginBottom:4}}>{m.date}</div>
+                    <div style={{fontSize:14,color:"#333",lineHeight:1.5,whiteSpace:"pre-wrap"}}>{m.text}</div>
+                    <div style={{display:"flex",gap:8,marginTop:10}}>
+                      <button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"editMessage",kidId:id,messageId:m.id,currentText:m.text}})}
+                        style={{background:"#FFB800",color:"#fff",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:800,cursor:"pointer"}}>✏️ Editar</button>
+                      <button onClick={()=>dispatch({type:"DELETE_MESSAGE",kidId:id,messageId:m.id})}
+                        style={{background:"#fff",color:PALETTE.error,border:`2px solid ${PALETTE.error}`,borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:800,cursor:"pointer"}}>🗑️ Eliminar</button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="card">
+        <h3 style={{fontWeight:900,marginBottom:4}}>📝 Gratitud de hoy (niños)</h3>
+        <p style={{fontSize:12,color:"#666",marginBottom:14}}>Lo que escriben los niños en su sección de gratitud.</p>
+        {["jose","david"].map(id=>{
+          const k=st.kids[id];
+          const grat=[...(k.gratitude||[])].reverse();
+          const kth=TH[id];
+          return (
+            <div key={id} style={{marginBottom:16}}>
+              <div style={{fontWeight:900,fontSize:13,color:kth.a,marginBottom:8}}>{id==="jose"?"👦🏻 José":"👦 David"}</div>
+              {grat.length===0 ? (
+                <div style={{fontSize:12,color:"#aaa",padding:"8px 0"}}>Aún no ha escrito gratitud</div>
+              ) : (
+                grat.map(g=>(
+                  <div key={g.id} style={{background:`${kth.p}11`,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${kth.p}33`}}>
+                    <div style={{fontSize:11,color:kth.a,fontWeight:700,marginBottom:4}}>📅 {g.date}</div>
+                    <div style={{fontSize:14,color:"#333",lineHeight:1.5}}>{g.text}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          );
+        })}
+      </div>
     </>
   );
 }
@@ -1745,7 +1801,7 @@ function Modal({ st, dispatch, roleData }) {
   if(m.type==="addWish") return wrap(<AddWishModal m={m} dispatch={dispatch}/>);
   if(m.type==="gratitude") return wrap(<GratitudeModal m={m} dispatch={dispatch}/>);
   if(m.type==="sendMsg") return wrap(<SendMsgModal m={m} dispatch={dispatch} st={st}/>);
-  if(m.type==="weeklyGoal") return wrap(<WeeklyGoalModal m={m} st={st} dispatch={dispatch}/>);
+  if(m.type==="editMessage") return wrap(<EditMessageModal m={m} dispatch={dispatch}/>);
   if(m.type==="challenge") return wrap(<ChallengeModal m={m} st={st} dispatch={dispatch}/>);
   return null;
 }
@@ -1843,6 +1899,21 @@ function RejectTaskModal({ m, dispatch, rejectedBy }) {
       <button onClick={()=>dispatch({type:"REJECT_TASK",kidId:m.kidId,taskId:m.taskId,notifId:m.notifId,rejectedBy:rejectedBy||m.rejectedBy||"father",message:reason||null})}
         style={{width:"100%",background:PALETTE.error,color:"#fff",border:"none",borderRadius:20,padding:16,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,cursor:"pointer"}}>
         ❌ Rechazar tarea
+      </button>
+    </>
+  );
+}
+
+function EditMessageModal({ m, dispatch }) {
+  const [text, setText] = useState(m.currentText||"");
+  return (
+    <>
+      <h2 style={{fontWeight:900,marginBottom:6}}>✏️ Editar mensaje</h2>
+      <textarea value={text} onChange={e=>setText(e.target.value)} style={{width:"100%",padding:"12px 14px",borderRadius:14,border:"2px solid #f0f0f0",fontSize:14,resize:"none",height:100,marginBottom:14}}/>
+      <button onClick={()=>dispatch({type:"EDIT_MESSAGE",kidId:m.kidId,messageId:m.messageId,text:text.trim()})}
+        disabled={!text.trim()}
+        style={{width:"100%",background:text.trim()?"#FFB800":"#f0f0f0",color:text.trim()?"#fff":"#aaa",border:"none",borderRadius:20,padding:16,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,cursor:text.trim()?"pointer":"default"}}>
+        ✅ Guardar
       </button>
     </>
   );
@@ -1982,26 +2053,6 @@ function SendMsgModal({ m, dispatch, st }) {
   );
 }
 
-function WeeklyGoalModal({ m, st, dispatch }) {
-  const [target,setTarget]=useState(st.weeklyGoal.target);
-  return (
-    <>
-      <h2 style={{fontWeight:900,marginBottom:8}}>🎯 Meta semanal familiar</h2>
-      <p style={{color:"#888",fontSize:13,fontWeight:600,marginBottom:16}}>Total de tareas a completar entre José y David esta semana</p>
-      <div style={{display:"flex",gap:8,marginBottom:16}}>
-        {[20,30,40,50,60].map(v=>(
-          <button key={v} onClick={()=>setTarget(v)} style={{flex:1,background:target===v?TH.parent.p:"#f0f0f0",color:target===v?"#fff":"#888",border:"none",borderRadius:14,padding:"10px 4px",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,cursor:"pointer"}}>{v}</button>
-        ))}
-      </div>
-      <input type="number" value={target} min={5} onChange={e=>setTarget(parseInt(e.target.value)||20)} style={{width:"100%",padding:"11px 14px",borderRadius:14,border:"2px solid #f0f0f0",fontSize:15,marginBottom:16}}/>
-      <button onClick={()=>dispatch({type:"SET_WEEKLY_GOAL",target})}
-        style={{width:"100%",background:`linear-gradient(135deg,${TH.parent.p},${TH.parent.a})`,color:"#fff",border:"none",borderRadius:20,padding:16,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,cursor:"pointer"}}>
-        ✅ Establecer meta de {target} tareas
-      </button>
-    </>
-  );
-}
-
 function ChallengeModal({ m, st, dispatch }) {
   const [taskId,setTaskId]=useState(st.tasks[0]?.id||1);
   const [deadline,setDeadline]=useState("");
@@ -2119,6 +2170,33 @@ export default function App() {
     });
     return unsub;
   }, []);
+
+  // Al volver a la app (dejar de estar minimizada), recargar datos para ver mensajes/actualizaciones
+  useEffect(() => {
+    if (!authUser || !roleData) return;
+    const onVisible = async () => {
+      if (typeof document === "undefined" || document.visibilityState !== "visible") return;
+      try {
+        const saved = await loadAppState();
+        if (saved) {
+          rawDispatch(prev => ({
+            ...prev,
+            ...saved,
+            screen: prev.screen,
+            modal: prev.modal,
+            toast: prev.toast,
+            confetti: prev.confetti,
+            loggedAccount: prev.loggedAccount,
+            activeKid: prev.activeKid,
+          }));
+        }
+      } catch (e) {
+        console.warn("Refresh on visibility:", e);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [authUser, roleData]);
 
   // Subscribe to real-time updates from Firestore (so all devices sync)
   useEffect(() => {
