@@ -69,6 +69,7 @@ const TH = {
   parent: { p:"#FFB800", a:"#CC8800", l:"#FFFBEA", d:"#996600" },
 };
 const PALETTE = { error:"#C62828", primaryDark:"#2D5010", primaryMuted:"#4A7A1E", gold:"#CC8800", goldLight:"#FFF3CC", text:"#1a1a1a", textSec:"#555", muted:"#888", border:"#f0f0f0", borderLight:"#e8e8e8" };
+const ALLOWED_SWITCH_ROLE_EMAILS = ["monsterk17@gmail.com", "cilvane2017@gmail.com"];
 const CAT_CLR = { espiritual:"#FF85C2", musica:"#8DC63F", colegio:"#5BC8F5", higiene:"#A78BFA", hogar:"#FFB800", mente:"#FF8C42" };
 const STARS_PER_EURO = 30;
 const LEVELS = [
@@ -321,13 +322,20 @@ function reducer(st, a) {
     }
 
     case "REJECT_TASK": {
-      const { kidId, taskId, notifId, rejectedBy } = a;
+      const { kidId, taskId, notifId, rejectedBy, message } = a;
+      const task = st.tasks.find(t=>t.id===taskId);
       const comp = { ...st.kids[kidId].completions };
       delete comp[taskId];
       const newNotifs=st.notifications.filter(n=>n.id!==notifId);
-      const logEntry={ id:Date.now(), kidId, taskId, taskName:st.tasks.find(t=>t.id===taskId)?.name, date:new Date().toLocaleDateString("es-ES"), approved:false, rejectedBy: rejectedBy||"parent" };
-      return { ...st, kids:{ ...st.kids, [kidId]:{ ...st.kids[kidId], completions:comp } },
-        notifications:newNotifs, approvalLog:[logEntry,...st.approvalLog], toast:"❌ Tarea rechazada" };
+      const whoRej = rejectedBy==="mother"?"Mamá":"Papá";
+      let kid = { ...st.kids[kidId], completions:comp };
+      if (message && message.trim()) {
+        const msgText = `${whoRej} rechazó "${task?.name||"la tarea"}": ${message.trim()}`;
+        kid = { ...kid, messages:[{ id:Date.now(), from:"parent", text:msgText, date:new Date().toLocaleTimeString("es-ES"), read:false },...kid.messages] };
+      }
+      const logEntry={ id:Date.now(), kidId, taskId, taskName:task?.name, date:new Date().toLocaleDateString("es-ES"), approved:false, rejectedBy: rejectedBy||"parent" };
+      return { ...st, kids:{ ...st.kids, [kidId]:kid },
+        notifications:newNotifs, approvalLog:[logEntry,...st.approvalLog], modal:null, toast:"❌ Tarea rechazada" };
     }
 
     case "ADD_TASK": return { ...st, tasks:[...st.tasks, {...a.task,id:st.nextId}], nextId:st.nextId+1, modal:null, toast:`✅ Tarea "${a.task.name}" creada` };
@@ -909,9 +917,9 @@ function TaskCard({ task, comp, kidId, th, dispatch, idx, mult }) {
     <div className="card" style={{border:approved?`2px solid ${th.a}`:done?`2px solid ${th.p}88`:`2px solid ${isSpecial?PALETTE.error:"#f0f0f0"}`,
       background:approved?th.l:done?`${th.p}09`:isSpecial?"#FFF5F5":"#fff",animation:`slideUp .35s ${idx*.04}s both`,overflow:"hidden"}}>
       {isSpecial&&<div style={{background:`linear-gradient(90deg,${PALETTE.error},#FF8C42)`,color:"#fff",fontSize:10,fontWeight:900,padding:"3px 12px",margin:"-16px -16px 10px",letterSpacing:1}}>🎯 MISIÓN ESPECIAL</div>}
-      <div style={{display:"flex",alignItems:"center",gap:10}}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
         <div style={{width:4,height:48,background:CAT_CLR[task.cat]||th.p,borderRadius:4,flexShrink:0}}/>
-        <div style={{fontSize:26}}>{task.emoji}</div>
+        <div style={{fontSize:26,lineHeight:1}}>{task.emoji}</div>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:13,color:"#1a1a1a",textDecoration:approved?"line-through":"none",opacity:approved?.55:1}}>{task.name}</div>
           <div style={{display:"flex",gap:5,marginTop:3,flexWrap:"wrap"}}>
@@ -920,20 +928,18 @@ function TaskCard({ task, comp, kidId, th, dispatch, idx, mult }) {
             {task.deadline&&<span style={{background:"#FFE4E4",borderRadius:50,padding:"1px 7px",fontSize:9,fontWeight:700,color:PALETTE.error}}>📅{task.deadline}</span>}
           </div>
         </div>
-        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
-            <StarBadge n={effStars}/>
-            {mult>1&&!done&&<div style={{fontSize:8,color:PALETTE.error,fontWeight:900}}>x{mult}⚡</div>}
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:44,flexShrink:0}}>
+          <StarBadge n={effStars}/>
+          {mult>1&&!done&&<div style={{fontSize:8,color:PALETTE.error,fontWeight:900}}>x{mult}⚡</div>}
+          <div style={{height:36,display:"flex",alignItems:"center",justifyContent:"center",marginTop:4}}>
+            {!done
+              ?<button onClick={()=>dispatch({type:"COMPLETE_TASK",kidId,taskId:task.id})}
+                  style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:50,width:36,height:36,cursor:"pointer",fontSize:18,color:"#fff",fontWeight:900,animation:"pulse 2s infinite",boxShadow:`0 4px 12px ${th.p}55`,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0}}>✓</button>
+              :approved
+                ?<div style={{width:36,height:36,borderRadius:"50%",background:th.a,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,lineHeight:1}}>✓</div>
+                :<div style={{width:36,height:36,borderRadius:"50%",background:"#FFB800",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,lineHeight:1}}>⏳</div>}
           </div>
-          {!done
-            ?<button onClick={()=>dispatch({type:"COMPLETE_TASK",kidId,taskId:task.id})}
-                style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:50,width:36,height:36,cursor:"pointer",fontSize:18,color:"#fff",fontWeight:900,animation:"pulse 2s infinite",boxShadow:`0 4px 12px ${th.p}55`,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0}}>✓</button>
-            :approved
-              ?<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                  <div style={{width:36,height:36,borderRadius:"50%",background:th.a,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,lineHeight:1}}>✓</div>
-                  {comp?.approvedBy&&<span style={{fontSize:9,fontWeight:700,color:"#666"}}>{(comp.approvedBy==="mother"?"Mamá":"Papá")} aprobó</span>}
-                </div>
-              :<div style={{width:36,height:36,borderRadius:"50%",background:"#FFB800",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,lineHeight:1}}>⏳</div>}
+          {done&&approved&&comp?.approvedBy&&<span style={{fontSize:9,fontWeight:700,color:"#666",marginTop:2}}>{(comp.approvedBy==="mother"?"Mamá":"Papá")} aprobó</span>}
         </div>
       </div>
       {done&&!approved&&(
@@ -1101,27 +1107,6 @@ function ChildMas({ kidId, kid, th, dispatch, challenges, onSwitchRole }) {
         ))}
       </div>
 
-      {/* Cambiar de rol — mismo móvil */}
-      {onSwitchRole && (
-        <div className="card" style={{border:"2px solid #8DC63F",background:"#F0FAE6",marginBottom:12}}>
-          <h3 style={{fontWeight:900,marginBottom:6,fontSize:14}}>🔄 Cambiar de rol</h3>
-          <p style={{fontSize:11,color:"#666",marginBottom:10}}>Usar este móvil como papá, mamá u otro niño.</p>
-          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-            {[
-              { role: "father", kidId: null, label: "👨 Papá", color: "#FFB800" },
-              { role: "mother", kidId: null, label: "👩 Mamá", color: "#E91E8C" },
-              { role: "child", kidId: "jose", label: "👦🏻 José", color: "#8DC63F" },
-              { role: "child", kidId: "david", label: "👦🏽 David", color: "#5BC8F5" },
-            ].map(o => (
-              <button key={o.role + (o.kidId || "")} onClick={() => onSwitchRole(o.role, o.kidId)}
-                style={{flex:"1 1 45%",background:o.color,color:"#fff",border:"none",borderRadius:12,padding:10,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:13,cursor:"pointer"}}>
-                {o.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {subTab==="gratitud"&&(
         <>
           <button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"gratitude",kidId}})}
@@ -1276,7 +1261,7 @@ function MoneyPanel({ kidId, kid, tasks, th, isParent, dispatch }) {
 // PARENT SCREEN
 // ═══════════════════════════════════════════════════════════════════════
 const PARENT_ROLE_LABEL = { father: "Papá", mother: "Mamá" };
-function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, onSwitchRole }) {
+function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, onSwitchRole, authUser, onExitRole }) {
   const parentRole = (roleData?.role === "mother" || roleData?.role === "father") ? roleData.role : "father";
   const currentParent = st.parents?.[parentRole] || { photo: null, name: PARENT_ROLE_LABEL[parentRole] };
   const th = parentRole === "mother" ? { ...TH.parent, p: "#E91E8C", a: "#C2185B", l: "#FCE4EC", d: "#880E4F" } : TH.parent;
@@ -1349,7 +1334,7 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
         {st.parentTab==="tareas"   && <ParentTareas st={st} dispatch={dispatch}/>}
         {st.parentTab==="dinero"   && <ParentDinero st={st} dispatch={dispatch}/>}
         {st.parentTab==="ranking"  && <ParentRanking st={st} dispatch={dispatch}/>}
-        {st.parentTab==="config"   && <ParentConfig st={st} dispatch={dispatch} parentRole={parentRole} currentParent={currentParent} onSwitchRole={onSwitchRole}/>}
+        {st.parentTab==="config"   && <ParentConfig st={st} dispatch={dispatch} parentRole={parentRole} currentParent={currentParent} onSwitchRole={onSwitchRole} authUser={authUser} onExitRole={onExitRole}/>}
       </div>
 
       <div className="tab-bar">
@@ -1414,8 +1399,8 @@ function ParentNotifs({ st, dispatch, parentRole }) {
               <div style={{display:"flex",gap:8,marginTop:10}}>
                 <button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"approveTask",notifId:n.id,kidId:n.kidId,taskId:n.taskId,taskName:task?.name}})}
                   style={{flex:2,background:"linear-gradient(135deg,#8DC63F,#5A9A20)",color:"#fff",border:"none",borderRadius:14,padding:11,fontFamily:"'Nunito',sans-serif",fontWeight:900,cursor:"pointer",fontSize:13}}>✅ Aprobar</button>
-                <button onClick={()=>dispatch({type:"REJECT_TASK",kidId:n.kidId,taskId:n.taskId,notifId:n.id,rejectedBy:parentRole})}
-                  style={{flex:1,background:"#fff",color:PALETTE.error,border:`2px solid ${PALETTE.error}`,borderRadius:14,padding:11,fontFamily:"'Nunito',sans-serif",fontWeight:900,cursor:"pointer",fontSize:13}}>❌</button>
+                <button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"rejectTask",notifId:n.id,kidId:n.kidId,taskId:n.taskId,taskName:task?.name,rejectedBy:parentRole}})}
+                  style={{flex:1,background:"#fff",color:PALETTE.error,border:`2px solid ${PALETTE.error}`,borderRadius:14,padding:11,fontFamily:"'Nunito',sans-serif",fontWeight:900,cursor:"pointer",fontSize:13}}>❌ Rechazar</button>
               </div>
             )}
             {comp?.approved&&<div style={{textAlign:"center",color:"#8DC63F",fontWeight:800,marginTop:8,fontSize:13}}>✅ Aprobada{approvedByLabel ? ` por ${approvedByLabel}` : ""}</div>}
@@ -1650,11 +1635,12 @@ function KidEditor({ id, kid, dispatch }) {
   );
 }
 
-function ParentConfig({ st, dispatch, parentRole, currentParent, onSwitchRole }) {
+function ParentConfig({ st, dispatch, parentRole, currentParent, onSwitchRole, authUser, onExitRole }) {
   const pr = parentRole || "father";
   const cp = currentParent || st.parents?.[pr] || { photo: null, name: PARENT_ROLE_LABEL[pr] };
   const [pname,setPname]=useState(cp.name||PARENT_ROLE_LABEL[pr]);
   const th = pr === "mother" ? { ...TH.parent, p: "#E91E8C", a: "#C2185B" } : TH.parent;
+  const canSwitchRole = onSwitchRole && authUser && ALLOWED_SWITCH_ROLE_EMAILS.includes(authUser.email);
   return (
     <>
       <div className="card" style={{margin:"12px 0"}}>
@@ -1695,11 +1681,11 @@ function ParentConfig({ st, dispatch, parentRole, currentParent, onSwitchRole })
         </div>
       </div>
 
-      {/* Cambiar de rol — mismo móvil, varios usuarios */}
-      {onSwitchRole && (
+      {/* Cambiar de rol — solo cuentas autorizadas (mismo móvil) */}
+      {canSwitchRole && (
         <div className="card" style={{border:"2px solid #8DC63F",background:"#F0FAE6"}}>
           <h3 style={{fontWeight:900,marginBottom:8}}>🔄 Cambiar de rol</h3>
-          <p style={{fontSize:12,color:"#666",marginBottom:12}}>Usa el mismo móvil con otra cuenta (papá, mamá o niño).</p>
+          <p style={{fontSize:12,color:"#666",marginBottom:12}}>Usa el mismo móvil con otro rol (papá, mamá o niño).</p>
           <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
             {[
               { role: "father", kidId: null, label: "👨 Papá", color: "#FFB800" },
@@ -1713,6 +1699,11 @@ function ParentConfig({ st, dispatch, parentRole, currentParent, onSwitchRole })
               </button>
             ))}
           </div>
+          {onExitRole && (
+            <button onClick={onExitRole} style={{width:"100%",marginTop:12,background:"#fff",color:"#666",border:"2px solid #ddd",borderRadius:14,padding:12,fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:13,cursor:"pointer"}}>
+              Salir del rol y elegir de nuevo
+            </button>
+          )}
         </div>
       )}
 
@@ -1745,6 +1736,7 @@ function Modal({ st, dispatch, roleData }) {
 
   if(m.type==="evidence") return wrap(<EvidenceModal m={m} dispatch={dispatch}/>);
   if(m.type==="approveTask") return wrap(<ApproveModal m={m} dispatch={dispatch} approvedBy={parentRole}/>);
+  if(m.type==="rejectTask") return wrap(<RejectTaskModal m={m} dispatch={dispatch} rejectedBy={parentRole}/>);
   if(m.type==="addTask"||m.type==="editTask") return wrap(<TaskFormModal m={m} dispatch={dispatch}/>);
   if(m.type==="payment") return wrap(<PaymentModal m={m} dispatch={dispatch}/>);
   if(m.type==="addWish") return wrap(<AddWishModal m={m} dispatch={dispatch}/>);
@@ -1832,6 +1824,22 @@ function ApproveModal({ m, dispatch, approvedBy }) {
       <button onClick={()=>dispatch({type:"APPROVE_TASK",kidId:m.kidId,taskId:m.taskId,notifId:m.notifId,message:msg||null,approvedBy:approvedBy||"father"})}
         style={{width:"100%",background:"linear-gradient(135deg,#8DC63F,#5A9A20)",color:"#fff",border:"none",borderRadius:20,padding:16,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,cursor:"pointer"}}>
         ✅ Aprobar {msg?"con mensaje":"sin mensaje"}
+      </button>
+    </>
+  );
+}
+
+function RejectTaskModal({ m, dispatch, rejectedBy }) {
+  const [reason, setReason] = useState("");
+  return (
+    <>
+      <h2 style={{fontWeight:900,marginBottom:6}}>❌ Rechazar tarea</h2>
+      <p style={{color:"#888",fontSize:13,fontWeight:600,marginBottom:16}}>{m.taskName}</p>
+      <p style={{fontSize:12,color:"#666",marginBottom:8}}>Indica el motivo (opcional). El niño lo verá en sus mensajes y podrá volver a intentarlo.</p>
+      <textarea value={reason} onChange={e=>setReason(e.target.value)} placeholder="Ej: Falta la foto de la evidencia..." style={{width:"100%",padding:"12px 14px",borderRadius:14,border:"2px solid #f0f0f0",fontSize:14,resize:"none",height:80,marginBottom:14}}/>
+      <button onClick={()=>dispatch({type:"REJECT_TASK",kidId:m.kidId,taskId:m.taskId,notifId:m.notifId,rejectedBy:rejectedBy||m.rejectedBy||"father",message:reason||null})}
+        style={{width:"100%",background:PALETTE.error,color:"#fff",border:"none",borderRadius:20,padding:16,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,cursor:"pointer"}}>
+        ❌ Rechazar tarea
       </button>
     </>
   );
@@ -2231,7 +2239,7 @@ export default function App() {
           }}/>
         )}
         {authUser && roleData && st.screen==="child"  && <ChildScreen st={st} dispatch={dispatch} onRequestNotif={requestChildNotif} showNotifPrompt={!!childKidId&&!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"} roleData={roleData} onSwitchRole={switchRole}/>}
-        {authUser && roleData && st.screen==="parent" && <ParentScreen st={st} dispatch={dispatch} onRequestNotif={requestParentNotif} showNotifPrompt={!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"} roleData={roleData} onSwitchRole={switchRole}/>}
+        {authUser && roleData && st.screen==="parent" && <ParentScreen st={st} dispatch={dispatch} onRequestNotif={requestParentNotif} showNotifPrompt={!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"} roleData={roleData} onSwitchRole={switchRole} authUser={authUser} onExitRole={()=>setRoleData(null)}/>}
 
         <Modal st={st} dispatch={dispatch} roleData={roleData}/>
       </div>
