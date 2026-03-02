@@ -31,11 +31,13 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
     const kids = after.kids || {};
     const messaging = getMessaging();
 
-    // ── 1) Push al PADRE cuando hay nueva notificación (niño completó algo) ──
-    const parentToken = after.parentFcmToken;
+    // ── 1) Push a AMBOS PADRES cuando hay nueva notificación (niño completó algo) ──
+    const parentTokens = after.parentFcmTokens || {};
+    const tokensToNotify = [parentTokens.father, parentTokens.mother].filter(Boolean);
+    if (after.parentFcmToken && !tokensToNotify.length) tokensToNotify.push(after.parentFcmToken); // retrocompat
     const notifs = Array.isArray(after.notifications) ? after.notifications : [];
     const prevCount = Array.isArray(before.notifications) ? before.notifications.length : 0;
-    if (parentToken && notifs.length > prevCount) {
+    if (tokensToNotify.length > 0 && notifs.length > prevCount) {
       const latest = notifs[0];
       const kidName = latest?.kidId ? (kids[latest.kidId]?.name || kidNames[latest.kidId] || "Tu hijo") : "Tu hijo";
       const taskName = getTaskName(tasks, latest?.taskId);
@@ -44,14 +46,16 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
         latest?.type === "privilege"
           ? `${kidName} ha canjeado un privilegio`
           : `${kidName} ha completado: ${taskName}. Ábrela para aprobar.`;
-      try {
-        await messaging.send({
-          token: parentToken,
-          notification: { title, body },
-          webpush: { notification: { title, body, icon: "/icons/icon-192x192.png" } },
-        });
-      } catch (err) {
-        console.warn("FCM parent:", err?.message);
+      for (const token of tokensToNotify) {
+        try {
+          await messaging.send({
+            token,
+            notification: { title, body },
+            webpush: { notification: { title, body, icon: "/icons/icon-192x192.png" } },
+          });
+        } catch (err) {
+          console.warn("FCM parent:", err?.message);
+        }
       }
     }
 
@@ -75,8 +79,9 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
         const bComp = bCompletions[taskIdStr];
         if (bComp?.approved) continue;
         const taskName = getTaskName(tasks, parseInt(taskIdStr, 10));
+        const who = aComp.approvedBy === "mother" ? "Mamá" : "Papá";
         const title = "Kids Goals";
-        const body = `¡Papá/mamá ha aprobado: ${taskName}! ⭐`;
+        const body = `¡${who} ha aprobado: ${taskName}! ⭐`;
         try {
           await messaging.send({
             token,
