@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 
 // ── Firebase setup ────────────────────────────────────────────
@@ -14,10 +14,8 @@ const _app = initializeApp({
   appId: "1:674188476039:web:d339b18f06f0f600968222",
 });
 const auth = getAuth(_app);
-// Persistencia local: datos en caché y se mantienen (incl. después de 30 días de inactividad)
-const db = initializeFirestore(_app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-});
+// Todo en la nube — sin caché local
+const db = getFirestore(_app);
 // Clave VAPID para notificaciones push (Firebase Console > Cloud Messaging > Web Push certificates)
 const FCM_VAPID_KEY = import.meta.env.VITE_FCM_VAPID_KEY || "";
 const _provider = new GoogleAuthProvider();
@@ -34,6 +32,10 @@ async function saveAppState(state)   {
 }
 async function setParentFcmToken(token) {
   return setDoc(doc(db,"appData","main"), { parentFcmToken: token }, { merge: true });
+}
+async function saveParentPhoto(parent) {
+  if (!parent?.photo) return;
+  return setDoc(doc(db,"appData","main"), { parent }, { merge: true });
 }
 async function setChildFcmToken(kidId, token) {
   return setDoc(doc(db,"appData","fcmTokens"), { [kidId]: token }, { merge: true });
@@ -364,7 +366,7 @@ function reducer(st, a) {
       return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], messages:msgs } } };
     }
 
-    case "SET_WEEKLY_GOAL": return { ...st, weeklyGoal:{ target:a.target, current:st.weeklyGoal.current } };
+    case "SET_WEEKLY_GOAL": return { ...st, weeklyGoal:{ target:a.target, current:st.weeklyGoal?.current??0 }, modal:null, toast:"🎯 Meta semanal guardada" };
 
     case "ADD_CHALLENGE": {
       const ch={ id:Date.now(), ...a.challenge, myCount:0, theirCount:0, winner:null };
@@ -1300,7 +1302,7 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt }) {
         {st.parentTab==="notifs"   && <ParentNotifs st={st} dispatch={dispatch}/>}
         {st.parentTab==="tareas"   && <ParentTareas st={st} dispatch={dispatch}/>}
         {st.parentTab==="dinero"   && <ParentDinero st={st} dispatch={dispatch}/>}
-        {st.parentTab==="ranking"  && <ParentRanking st={st}/>}
+        {st.parentTab==="ranking"  && <ParentRanking st={st} dispatch={dispatch}/>}
         {st.parentTab==="config"   && <ParentConfig st={st} dispatch={dispatch}/>}
       </div>
 
@@ -1479,7 +1481,7 @@ function ParentDinero({ st, dispatch }) {
 }
 
 // ─── PARENT RANKING ─────────────────────────────────────────────
-function ParentRanking({ st }) {
+function ParentRanking({ st, dispatch }) {
   const kids=["jose","david"].map(id=>({
     id, kid:st.kids[id], as:approvedStars(st.kids[id],st.tasks), lv:getLevel(approvedStars(st.kids[id],st.tasks)),
     euros:totalEuros(st.kids[id],st.tasks), done:Object.values(st.kids[id].completions).filter(v=>v.done).length,
@@ -1549,7 +1551,15 @@ function ParentRanking({ st }) {
             </div>
           );
         })}
-        <button style={{width:"100%",background:"linear-gradient(135deg,#FFB800,#CC8800)",color:"#fff",border:"none",borderRadius:16,padding:12,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,cursor:"pointer",marginTop:12}}>
+        <button onClick={()=>{
+          const w=window.open("","_blank","width=800,height=600");
+          if(!w) { dispatch?.({type:"TOAST",msg:"Permite ventanas emergentes para exportar"}); return; }
+          const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Informe Kids Goals</title><style>body{font-family:sans-serif;padding:24px;max-width:600px;margin:0 auto}h1{color:#2D5010}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;border-bottom:1px solid #eee}.r{text-align:right}</style></head><body><h1>📊 Informe semanal Kids Goals</h1><p><small>${new Date().toLocaleDateString("es-ES",{day:"2-digit",month:"long",year:"numeric"})}</small></p><table><thead><tr><th>Niño</th><th>Estrellas</th><th class="r">Euros</th><th class="r">Logros</th><th class="r">Tareas</th></tr></thead><tbody>${["jose","david"].map(id=>{const k=st.kids[id];const as=approvedStars(k,st.tasks);return `<tr><td><strong>${k.name}</strong></td><td>${as}⭐</td><td class="r">${totalEuros(k,st.tasks)}€</td><td class="r">${k.achievements.length}</td><td class="r">${k.stats.totalDone||0}</td></tr>`}).join("")}</tbody></table><p style="margin-top:24px;color:#888;font-size:12px">Kids Goals — Informe generado automáticamente</p></body></html>`;
+          w.document.write(html);
+          w.document.close();
+          w.focus();
+          setTimeout(()=>{ w.print(); w.close(); }, 300);
+        }} style={{width:"100%",background:"linear-gradient(135deg,#FFB800,#CC8800)",color:"#fff",border:"none",borderRadius:16,padding:12,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,cursor:"pointer",marginTop:12}}>
           📄 Exportar informe PDF
         </button>
       </div>
@@ -1612,6 +1622,13 @@ function ParentConfig({ st, dispatch }) {
         {/* Kids */}
         {["jose","david"].map(id=><KidEditor key={id} id={id} kid={st.kids[id]} dispatch={dispatch}/>)}
       </div>
+
+      {!FCM_VAPID_KEY&&(
+        <div className="card" style={{border:"2px solid #FFB800",background:"#FFFBEA"}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#CC8800"}}>🔔 Notificaciones</div>
+          <div style={{fontSize:12,color:"#888",marginTop:4}}>Para recibir avisos en el móvil, añade la variable <code style={{background:"#f0f0f0",padding:"2px 6px",borderRadius:4}}>VITE_FCM_VAPID_KEY</code> en Netlify (Site settings → Environment variables). Obtén la clave en Firebase Console → Cloud Messaging → Web Push certificates.</div>
+        </div>
+      )}
 
       {/* Send message to kids */}
       <div className="card">
@@ -1957,14 +1974,13 @@ export default function App() {
     if (authUser && roleData) debouncedSave(st);
   }, [st]);
 
-  // Guardar foto de padre inmediatamente (el debounce puede no ejecutarse a tiempo)
+  // Guardar foto de padre en la nube (merge para no sobrescribir el resto)
   const lastParentPhoto = useRef(st.parent?.photo);
   useEffect(() => {
-    if (!authUser || roleData?.role !== "parent") return;
-    if (st.parent?.photo !== lastParentPhoto.current) {
-      lastParentPhoto.current = st.parent?.photo;
-      saveAppState(st).catch(console.error);
-    }
+    if (!authUser || roleData?.role !== "parent" || !st.parent?.photo) return;
+    if (st.parent.photo === lastParentPhoto.current) return;
+    lastParentPhoto.current = st.parent.photo;
+    saveParentPhoto(st.parent).then(()=>dispatch({type:"TOAST",msg:"✅ Foto guardada"})).catch(console.error);
   }, [st.parent?.photo, authUser, roleData?.role]);
 
   // Firebase auth listener
