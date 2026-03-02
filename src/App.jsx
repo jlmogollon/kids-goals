@@ -69,7 +69,7 @@ const TH = {
   parent: { p:"#FFB800", a:"#CC8800", l:"#FFFBEA", d:"#996600" },
 };
 const PALETTE = { error:"#C62828", primaryDark:"#2D5010", primaryMuted:"#4A7A1E", gold:"#CC8800", goldLight:"#FFF3CC", text:"#1a1a1a", textSec:"#555", muted:"#888", border:"#f0f0f0", borderLight:"#e8e8e8" };
-const ALLOWED_SWITCH_ROLE_EMAILS = ["monsterk17@gmail.com", "cilvane2017@gmail.com"];
+const FIXED_PARENT_EMAILS = { "monsterk17@gmail.com": "father", "cilvane2017@gmail.com": "mother" };
 const CAT_CLR = { espiritual:"#FF85C2", musica:"#8DC63F", colegio:"#5BC8F5", higiene:"#A78BFA", hogar:"#FFB800", mente:"#FF8C42" };
 const STARS_PER_EURO = 30;
 const LEVELS = [
@@ -87,7 +87,7 @@ const DEMO_ACCOUNTS = [
   { id:"acc_papa",  name:"Papá",  email:"papa@icloud.com",  role:"parent", isMinor:false, avatar:"👨" },
   { id:"acc_mama",  name:"Mamá",  email:"mama@icloud.com",  role:"parent", isMinor:false, avatar:"👩" },
   { id:"acc_jose",  name:"José",  email:"jose@icloud.com",  role:"child",  kidId:"jose", isMinor:true,  dob:"2013-06-15", avatar:"👦🏻" },
-  { id:"acc_david", name:"David", email:"david@icloud.com", role:"child",  kidId:"david",isMinor:true,  dob:"2016-09-22", avatar:"👦🏽" },
+  { id:"acc_david", name:"David", email:"david@icloud.com", role:"child",  kidId:"david",isMinor:true,  dob:"2016-09-22", avatar:"👦" },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -743,7 +743,7 @@ function RoleScreen({ user, onRole }) {
           {label:"👨 Soy padre", role:"father", kidId:null, color:"#FFB800", shadow:"rgba(255,184,0,0.35)"},
           {label:"👩 Soy madre", role:"mother", kidId:null, color:"#E91E8C", shadow:"rgba(233,30,140,0.35)"},
           {label:"👦🏻 Soy José",  role:"child", kidId:"jose",  color:"#8DC63F", shadow:"rgba(141,198,63,0.35)"},
-          {label:"👦🏽 Soy David", role:"child", kidId:"david", color:"#5BC8F5", shadow:"rgba(91,200,245,0.35)"},
+          {label:"👦 Soy David", role:"child", kidId:"david", color:"#5BC8F5", shadow:"rgba(91,200,245,0.35)"},
         ].map(o=>(
           <button key={o.role+o.kidId} onClick={()=>choose(o.role,o.kidId)} disabled={loading}
             style={{background:`linear-gradient(135deg,${o.color},${o.color}cc)`,color:"#fff",border:"none",borderRadius:18,padding:"18px 24px",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:18,cursor:"pointer",boxShadow:`0 8px 24px ${o.shadow}`,opacity:loading?0.7:1}}>
@@ -761,7 +761,7 @@ function RoleScreen({ user, onRole }) {
 // ═══════════════════════════════════════════════════════════════════════
 // CHILD SCREEN
 // ═══════════════════════════════════════════════════════════════════════
-function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, onSwitchRole }) {
+function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData }) {
   const kidId = st.activeKid || roleData?.kidId || "jose";
   const kid = st.kids[kidId] || st.kids.jose || st.kids.david;
   if (!kid) return <div className="screen" style={{display:"flex",alignItems:"center",justifyContent:"center",background:"#f5f5f5"}}><p>Cargando...</p></div>;
@@ -781,6 +781,7 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
 
   const tabs=[
     {id:"hoy",icon:"📋",label:"Hoy"},
+    {id:"mensajes",icon:"💬",label:"Mensajes",badge:unreadMsgs},
     {id:"logros",icon:"🏅",label:"Logros"},
     {id:"tienda",icon:"🛍️",label:"Tienda"},
     {id:"dinero",icon:"💶",label:"Dinero"},
@@ -841,21 +842,50 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
           </button>
         )}
         <HomeWidget kid={kid} kidId={kidId} tasks={st.tasks}/>
-        {st.childTab==="hoy"    && <ChildToday kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} mult={mult}/>}
-        {st.childTab==="logros" && <ChildLogros kid={kid} kidId={kidId} as={as} th={th}/>}
-        {st.childTab==="tienda" && <ChildTienda kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} avail={avail}/>}
-        {st.childTab==="dinero" && <MoneyPanel kidId={kidId} kid={kid} tasks={st.tasks} th={th} isParent={false} dispatch={dispatch}/>}
-        {st.childTab==="mas"    && <ChildMas kidId={kidId} kid={kid} th={th} dispatch={dispatch} challenges={st.challenges} onSwitchRole={onSwitchRole}/>}
+        {st.childTab==="hoy"       && <ChildToday kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} mult={mult}/>}
+        {st.childTab==="mensajes"  && <ChildMensajes kidId={kidId} kid={kid} th={th} dispatch={dispatch}/>}
+        {st.childTab==="logros"    && <ChildLogros kid={kid} kidId={kidId} as={as} th={th}/>}
+        {st.childTab==="tienda"    && <ChildTienda kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} avail={avail}/>}
+        {st.childTab==="dinero"    && <MoneyPanel kidId={kidId} kid={kid} tasks={st.tasks} th={th} isParent={false} dispatch={dispatch}/>}
+        {st.childTab==="mas"       && <ChildMas kidId={kidId} kid={kid} th={th} dispatch={dispatch} challenges={st.challenges}/>}
       </div>
 
       <div className="tab-bar">
         {tabs.map(t=>(
-          <div key={t.id} className="tab-item" onClick={()=>dispatch({type:"SET_CHILD_TAB",tab:t.id})}>
+          <div key={t.id} className="tab-item" onClick={()=>{ dispatch({type:"SET_CHILD_TAB",tab:t.id}); if(t.id==="mensajes"&&unreadMsgs>0) dispatch({type:"READ_MESSAGES",kidId}); }}>
             <span className="ti">{t.icon}</span>
             <span className="tl" style={{color:st.childTab===t.id?th.p:"#bbb"}}>{t.label}</span>
+            {t.badge>0&&<span className="badge">{t.badge}</span>}
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ─── CENTRO DE MENSAJES (niño) ──────────────────────────────────
+function ChildMensajes({ kidId, kid, th, dispatch }) {
+  const messages = [...(kid.messages||[])].reverse();
+  useEffect(() => {
+    if ((kid.messages||[]).some(m=>!m.read)) dispatch({ type: "READ_MESSAGES", kidId });
+  }, [kidId]);
+  return (
+    <div className="card" style={{marginBottom:12}}>
+      <h3 style={{fontWeight:900,marginBottom:12}}>💬 Centro de mensajes</h3>
+      <p style={{fontSize:12,color:"#666",marginBottom:14}}>Mensajes de papá/mamá y motivos cuando rechazan una tarea.</p>
+      {messages.length===0 ? (
+        <div style={{textAlign:"center",padding:"40px 0",color:"#aaa"}}>
+          <div style={{fontSize:48}}>💬</div>
+          <div style={{fontWeight:700,marginTop:8}}>Sin mensajes</div>
+        </div>
+      ) : (
+        messages.map(m=>(
+          <div key={m.id} style={{padding:"12px 0",borderBottom:"1px solid #f0f0f0",background:m.read?"transparent":"#F0FAE6",borderRadius:12,marginBottom:8,padding:"12px 14px"}}>
+            <div style={{fontSize:11,color:th.a,fontWeight:800,marginBottom:4}}>{m.date}</div>
+            <div style={{fontSize:14,fontWeight:600,color:"#333",lineHeight:1.5,whiteSpace:"pre-wrap"}}>{m.text}</div>
+          </div>
+        ))
+      )}
     </div>
   );
 }
@@ -1092,7 +1122,7 @@ function ChildTienda({ kidId, kid, tasks, th, dispatch, avail }) {
 }
 
 // ─── CHILD MÁS ──────────────────────────────────────────────────
-function ChildMas({ kidId, kid, th, dispatch, challenges, onSwitchRole }) {
+function ChildMas({ kidId, kid, th, dispatch, challenges }) {
   const [subTab,setSubTab]=useState("gratitud");
   const myChallenges=challenges.filter(c=>c.kid1===kidId||c.kid2===kidId);
 
@@ -1261,7 +1291,7 @@ function MoneyPanel({ kidId, kid, tasks, th, isParent, dispatch }) {
 // PARENT SCREEN
 // ═══════════════════════════════════════════════════════════════════════
 const PARENT_ROLE_LABEL = { father: "Papá", mother: "Mamá" };
-function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, onSwitchRole, authUser, onExitRole }) {
+function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData }) {
   const parentRole = (roleData?.role === "mother" || roleData?.role === "father") ? roleData.role : "father";
   const currentParent = st.parents?.[parentRole] || { photo: null, name: PARENT_ROLE_LABEL[parentRole] };
   const th = parentRole === "mother" ? { ...TH.parent, p: "#E91E8C", a: "#C2185B", l: "#FCE4EC", d: "#880E4F" } : TH.parent;
@@ -1297,7 +1327,7 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
             return (
               <div key={id} style={{flex:1,background:"rgba(255,255,255,.18)",borderRadius:16,padding:"10px 12px",border:`2px solid rgba(255,255,255,.3)`,minWidth:0}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-                  <Avatar photo={k.photo} emoji={id==="jose"?"👦🏻":"👦🏽"} size={30} color="#fff"/>
+                  <Avatar photo={k.photo} emoji={id==="jose"?"👦🏻":"👦"} size={30} color="#fff"/>
                   <div style={{color:"#fff",fontWeight:900,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.name}</div>
                 </div>
                 <div style={{color:"rgba(255,255,255,.9)",fontSize:11,fontWeight:700}}>{getLevel(as).icon} {getLevel(as).name}</div>
@@ -1334,7 +1364,7 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
         {st.parentTab==="tareas"   && <ParentTareas st={st} dispatch={dispatch}/>}
         {st.parentTab==="dinero"   && <ParentDinero st={st} dispatch={dispatch}/>}
         {st.parentTab==="ranking"  && <ParentRanking st={st} dispatch={dispatch}/>}
-        {st.parentTab==="config"   && <ParentConfig st={st} dispatch={dispatch} parentRole={parentRole} currentParent={currentParent} onSwitchRole={onSwitchRole} authUser={authUser} onExitRole={onExitRole}/>}
+        {st.parentTab==="config"   && <ParentConfig st={st} dispatch={dispatch} parentRole={parentRole} currentParent={currentParent}/>}
       </div>
 
       <div className="tab-bar">
@@ -1385,7 +1415,7 @@ function ParentNotifs({ st, dispatch, parentRole }) {
         return (
           <div key={n.id} className="card" style={{border:n.read?`2px solid #f0f0f0`:`2px solid ${kth.p}`,animation:"slideUp .3s both"}}>
             <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-              <Avatar photo={k.photo} emoji={n.kidId==="jose"?"👦🏻":"👦🏽"} size={44} color={kth.p}/>
+              <Avatar photo={k.photo} emoji={n.kidId==="jose"?"👦🏻":"👦"} size={44} color={kth.p}/>
               <div style={{flex:1}}>
                 <div style={{fontWeight:800,fontSize:14}}>{k.name} completó:</div>
                 <div style={{color:"#555",fontSize:13,fontWeight:600}}>{task?.emoji} {task?.name}</div>
@@ -1490,7 +1520,7 @@ function ParentDinero({ st, dispatch }) {
         {["jose","david"].map(id=>(
           <button key={id} onClick={()=>setActiveKid(id)}
             style={{flex:1,borderRadius:14,padding:10,border:"none",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,background:activeKid===id?TH[id].p:"#f0f0f0",color:activeKid===id?"#fff":"#888",transition:"all .2s"}}>
-            {id==="jose"?"👦🏻 José":"👦🏽 David"}
+            {id==="jose"?"👦🏻 José":"👦 David"}
           </button>
         ))}
       </div>
@@ -1532,7 +1562,7 @@ function ParentRanking({ st, dispatch }) {
           return (
             <div key={k.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:i<kids.length-1?16:0}}>
               <div style={{fontSize:28}}>{i===0?"🥇":"🥈"}</div>
-              <Avatar photo={k.kid.photo} emoji={k.id==="jose"?"👦🏻":"👦🏽"} size={44} color={kth.p}/>
+              <Avatar photo={k.kid.photo} emoji={k.id==="jose"?"👦🏻":"👦"} size={44} color={kth.p}/>
               <div style={{flex:1}}>
                 <div style={{fontWeight:900,fontSize:15}}>{k.kid.name} <span style={{fontSize:13}}>{k.lv.icon} {k.lv.name}</span></div>
                 <div style={{fontSize:11,color:"#888",fontWeight:700}}>🏅 {k.ach} logros · 🔥 {k.streak} días · ✅ {k.done} tareas</div>
@@ -1573,7 +1603,7 @@ function ParentRanking({ st, dispatch }) {
           return (
             <div key={id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:id==="jose"?"1px solid #f0f0f0":"none"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <Avatar photo={k.photo} emoji={id==="jose"?"👦🏻":"👦🏽"} size={36} color={kth.p}/>
+                <Avatar photo={k.photo} emoji={id==="jose"?"👦🏻":"👦"} size={36} color={kth.p}/>
                 <div>
                   <div style={{fontWeight:800,fontSize:13}}>{k.name}</div>
                   <div style={{fontSize:11,color:"#888"}}>{k.achievements.length} logros · {k.stats.totalDone||0} tareas</div>
@@ -1612,7 +1642,7 @@ function KidEditor({ id, kid, dispatch }) {
   return (
     <div style={{padding:"12px 0",borderBottom:"1px solid #f0f0f0"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <Avatar photo={kid.photo} emoji={id==="jose"?"👦🏻":"👦🏽"} size={52} color={th.p}
+        <Avatar photo={kid.photo} emoji={id==="jose"?"👦🏻":"👦"} size={52} color={th.p}
           onClick={ph=>dispatch({type:"SET_KID_PHOTO",kidId:id,photo:ph})}/>
         <div style={{flex:1}}>
           {!edit?(
@@ -1635,12 +1665,11 @@ function KidEditor({ id, kid, dispatch }) {
   );
 }
 
-function ParentConfig({ st, dispatch, parentRole, currentParent, onSwitchRole, authUser, onExitRole }) {
+function ParentConfig({ st, dispatch, parentRole, currentParent }) {
   const pr = parentRole || "father";
   const cp = currentParent || st.parents?.[pr] || { photo: null, name: PARENT_ROLE_LABEL[pr] };
   const [pname,setPname]=useState(cp.name||PARENT_ROLE_LABEL[pr]);
   const th = pr === "mother" ? { ...TH.parent, p: "#E91E8C", a: "#C2185B" } : TH.parent;
-  const canSwitchRole = onSwitchRole && authUser && ALLOWED_SWITCH_ROLE_EMAILS.includes(authUser.email);
   return (
     <>
       <div className="card" style={{margin:"12px 0"}}>
@@ -1675,37 +1704,11 @@ function ParentConfig({ st, dispatch, parentRole, currentParent, onSwitchRole, a
           {["jose","david"].map(id=>(
             <button key={id} onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"sendMsg",kidId:id}})}
               style={{flex:1,background:`linear-gradient(135deg,${TH[id].p},${TH[id].a})`,color:"#fff",border:"none",borderRadius:14,padding:"10px",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:13,cursor:"pointer"}}>
-              {id==="jose"?"👦🏻 José":"👦🏽 David"}
+              {id==="jose"?"👦🏻 José":"👦 David"}
             </button>
           ))}
         </div>
       </div>
-
-      {/* Cambiar de rol — solo cuentas autorizadas (mismo móvil) */}
-      {canSwitchRole && (
-        <div className="card" style={{border:"2px solid #8DC63F",background:"#F0FAE6"}}>
-          <h3 style={{fontWeight:900,marginBottom:8}}>🔄 Cambiar de rol</h3>
-          <p style={{fontSize:12,color:"#666",marginBottom:12}}>Usa el mismo móvil con otro rol (papá, mamá o niño).</p>
-          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-            {[
-              { role: "father", kidId: null, label: "👨 Papá", color: "#FFB800" },
-              { role: "mother", kidId: null, label: "👩 Mamá", color: "#E91E8C" },
-              { role: "child", kidId: "jose", label: "👦🏻 José", color: "#8DC63F" },
-              { role: "child", kidId: "david", label: "👦🏽 David", color: "#5BC8F5" },
-            ].map(o => (
-              <button key={o.role + (o.kidId || "")} onClick={() => onSwitchRole(o.role, o.kidId)}
-                style={{flex:"1 1 45%",background:o.color,color:"#fff",border:"none",borderRadius:14,padding:12,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,cursor:"pointer"}}>
-                {o.label}
-              </button>
-            ))}
-          </div>
-          {onExitRole && (
-            <button onClick={onExitRole} style={{width:"100%",marginTop:12,background:"#fff",color:"#666",border:"2px solid #ddd",borderRadius:14,padding:12,fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:13,cursor:"pointer"}}>
-              Salir del rol y elegir de nuevo
-            </button>
-          )}
-        </div>
-      )}
 
       <div className="card" style={{background:"#FFF0F0",border:"2px solid #FFD0D0",textAlign:"center"}}>
         <button onClick={()=>logoutFirebase()}
@@ -2077,11 +2080,14 @@ export default function App() {
         rawDispatch(() => ({ ...initState(), screen: "auth" }));
         return;
       }
-      // User is logged in — get their role
+      // User is logged in — get their role (o asignar rol fijo por email)
       try {
-        const role = await getUserRole(user.uid);
+        let role = await getUserRole(user.uid);
+        if (!role && user.email && FIXED_PARENT_EMAILS[user.email]) {
+          role = { role: FIXED_PARENT_EMAILS[user.email], kidId: null, name: user.displayName, email: user.email, photo: user.photoURL };
+          await setUserRole(user.uid, role);
+        }
         if (!role) {
-          // First time — show role selection
           setRoleData(null);
           setAppLoading(false);
           return;
@@ -2161,31 +2167,6 @@ export default function App() {
     }
   }, [parentRoleForFcm]);
 
-  // Cambiar de rol sin cerrar sesión (mismo dispositivo, varios usuarios)
-  const switchRole = useCallback(async (role, kidId) => {
-    if (!authUser) return;
-    try {
-      await setUserRole(authUser.uid, {
-        role,
-        kidId: kidId || null,
-        name: authUser.displayName,
-        email: authUser.email,
-        photo: authUser.photoURL,
-      });
-      setRoleData({ role, kidId: kidId || null });
-      rawDispatch(prev => ({
-        ...prev,
-        screen: (role === "father" || role === "mother") ? "parent" : "child",
-        activeKid: kidId || null,
-        loggedAccount: { ...prev.loggedAccount, role, kidId: kidId || null },
-      }));
-      dispatch({ type: "TOAST", msg: `✅ Ahora entras como ${role === "father" ? "Papá" : role === "mother" ? "Mamá" : kidId === "jose" ? "José" : "David"}` });
-    } catch (e) {
-      console.error(e);
-      dispatch({ type: "TOAST", msg: "Error al cambiar de rol" });
-    }
-  }, [authUser]);
-
   // Notificaciones push para el niño (gesto del usuario requerido)
   const childKidId = roleData?.role === "child" ? (roleData?.kidId || st.activeKid) : null;
   const requestChildNotif = useCallback(async () => {
@@ -2238,8 +2219,8 @@ export default function App() {
               loggedAccount:{...r, uid:authUser.uid, googlePhoto:authUser.photoURL}}));
           }}/>
         )}
-        {authUser && roleData && st.screen==="child"  && <ChildScreen st={st} dispatch={dispatch} onRequestNotif={requestChildNotif} showNotifPrompt={!!childKidId&&!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"} roleData={roleData} onSwitchRole={switchRole}/>}
-        {authUser && roleData && st.screen==="parent" && <ParentScreen st={st} dispatch={dispatch} onRequestNotif={requestParentNotif} showNotifPrompt={!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"} roleData={roleData} onSwitchRole={switchRole} authUser={authUser} onExitRole={()=>setRoleData(null)}/>}
+        {authUser && roleData && st.screen==="child"  && <ChildScreen st={st} dispatch={dispatch} onRequestNotif={requestChildNotif} showNotifPrompt={!!childKidId&&!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"} roleData={roleData}/>}
+        {authUser && roleData && st.screen==="parent" && <ParentScreen st={st} dispatch={dispatch} onRequestNotif={requestParentNotif} showNotifPrompt={!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"} roleData={roleData}/>}
 
         <Modal st={st} dispatch={dispatch} roleData={roleData}/>
       </div>

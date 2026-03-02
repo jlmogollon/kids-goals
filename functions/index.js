@@ -110,6 +110,23 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
           console.warn("FCM child reject:", err?.message);
         }
       }
+
+      // Nuevo mensaje (papá/mamá o motivo de rechazo): push al niño
+      const bMsgs = beforeKids[kidId]?.messages || [];
+      const aMsgs = afterKids[kidId]?.messages || [];
+      if (aMsgs.length > bMsgs.length && aMsgs[0]?.text) {
+        const title = "Kids Goals";
+        const body = aMsgs[0].text.length > 80 ? aMsgs[0].text.slice(0, 77) + "…" : aMsgs[0].text;
+        try {
+          await messaging.send({
+            token,
+            notification: { title, body },
+            webpush: { notification: { title, body, icon: "/icons/icon-192x192.png" } },
+          });
+        } catch (err) {
+          console.warn("FCM child message:", err?.message);
+        }
+      }
     }
   }
 );
