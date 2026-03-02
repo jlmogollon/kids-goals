@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
+import { getMessaging, getToken, onMessage } from "firebase/messaging";
 
 // ── Firebase setup ────────────────────────────────────────────
 const _app = initializeApp({
@@ -17,6 +18,8 @@ const auth = getAuth(_app);
 const db = initializeFirestore(_app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 });
+// Clave VAPID para notificaciones push (Firebase Console > Cloud Messaging > Web Push certificates)
+const FCM_VAPID_KEY = import.meta.env.VITE_FCM_VAPID_KEY || "";
 const _provider = new GoogleAuthProvider();
 
 function loginWithGoogle()          { return signInWithPopup(auth, _provider); }
@@ -28,6 +31,12 @@ async function loadAppState()        { const s=await getDoc(doc(db,"appData","ma
 async function saveAppState(state)   {
   const {screen,modal,toast,confetti,loggedAccount,authUser,loading,...data}=state;
   return setDoc(doc(db,"appData","main"),data);
+}
+async function setParentFcmToken(token) {
+  return setDoc(doc(db,"appData","main"), { parentFcmToken: token }, { merge: true });
+}
+async function setChildFcmToken(kidId, token) {
+  return setDoc(doc(db,"appData","fcmTokens"), { [kidId]: token }, { merge: true });
 }
 function subscribeAppState(cb) { return onSnapshot(doc(db,"appData","main"),(s)=>{ if(s.exists()) cb(s.data()); }); }
 
@@ -197,6 +206,7 @@ function initState() {
     toast: null,
     confetti: false,
     nextId: 200,
+    parentFcmToken: null, // token para notificaciones push del padre
   };
 }
 
@@ -249,6 +259,7 @@ function reducer(st, a) {
     case "SET_KID_INFO": return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], name:a.name, dob:a.dob } } };
     case "SET_PARENT_PIN": return { ...st, parent:{ ...st.parent, pin:a.pin } };
     case "SET_PARENT_NAME": return { ...st, parent:{ ...st.parent, name:a.name } };
+    case "SET_PARENT_FCM_TOKEN": return { ...st, parentFcmToken:a.token };
 
     case "COMPLETE_TASK": {
       const { kidId, taskId } = a;
@@ -272,7 +283,7 @@ function reducer(st, a) {
     case "APPROVE_TASK": {
       const { kidId, taskId, notifId, message } = a;
       const task = st.tasks.find(t=>t.id===taskId);
-      const comp = { ...st.kids[kidId].completions[taskId], approved:true };
+      const comp = { ...st.kids[kidId].completions[taskId], approved:true, evidence:null, photoUrl:null };
       let kid = { ...st.kids[kidId], completions:{ ...st.kids[kidId].completions, [taskId]:comp } };
       // Add encouragement message if provided
       if(message) kid = { ...kid, messages:[{ id:Date.now(), from:"parent", text:message, date:new Date().toLocaleTimeString("es-ES"), read:false },...kid.messages] };
@@ -882,19 +893,19 @@ function TaskCard({ task, comp, kidId, th, dispatch, idx, mult }) {
           </div>
           {!done
             ?<button onClick={()=>dispatch({type:"COMPLETE_TASK",kidId,taskId:task.id})}
-                style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:50,width:36,height:36,cursor:"pointer",fontSize:16,color:"#fff",fontWeight:900,animation:"pulse 2s infinite",boxShadow:`0 4px 12px ${th.p}55`}}>✓</button>
+                style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:50,width:36,height:36,cursor:"pointer",fontSize:18,color:"#fff",fontWeight:900,animation:"pulse 2s infinite",boxShadow:`0 4px 12px ${th.p}55`,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0}}>✓</button>
             :approved
-              ?<div style={{width:36,height:36,borderRadius:"50%",background:th.a,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>✅</div>
-              :<div style={{width:36,height:36,borderRadius:"50%",background:"#FFB800",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>⏳</div>}
+              ?<div style={{width:36,height:36,borderRadius:"50%",background:th.a,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,lineHeight:1}}>✓</div>
+              :<div style={{width:36,height:36,borderRadius:"50%",background:"#FFB800",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,lineHeight:1}}>⏳</div>}
         </div>
       </div>
       {done&&!approved&&(
         <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #f0f0f0"}}>
-          {comp.evidence
-            ?<div style={{background:"#FFF3CC",borderRadius:10,padding:"4px 10px",fontSize:11,fontWeight:700,color:"#CC8800"}}>📎 Evidencia enviada · ⏳ Esperando aprobación</div>
+          {comp.photoUrl
+            ?<div style={{background:"#FFF3CC",borderRadius:10,padding:"4px 10px",fontSize:11,fontWeight:700,color:"#CC8800"}}>📸 Foto enviada · ⏳ Esperando aprobación</div>
             :<button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"evidence",kidId,taskId:task.id}})}
                 style={{width:"100%",background:"#f8f8f8",border:`2px dashed ${th.p}77`,borderRadius:12,padding:8,cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:700,fontSize:12,color:"#888"}}>
-                📸 Agregar foto / nota como evidencia
+                📸 Agregar foto como evidencia
               </button>}
         </div>
       )}
@@ -1045,7 +1056,7 @@ function ChildMas({ kidId, kid, th, dispatch, challenges }) {
   return (
     <>
       <div style={{display:"flex",gap:8,marginBottom:12,overflowX:"auto"}}>
-        {[{id:"gratitud",label:"📝 Gratitud"},{id:"retos",label:"⚔️ Retos"},{id:"semana",label:"📅 Semana"},{id:"fotos",label:"📸 Fotos"}].map(t=>(
+        {[{id:"gratitud",label:"📝 Gratitud"},{id:"retos",label:"⚔️ Retos"},{id:"semana",label:"📅 Semana"}].map(t=>(
           <button key={t.id} onClick={()=>setSubTab(t.id)}
             style={{whiteSpace:"nowrap",borderRadius:50,padding:"8px 14px",border:"none",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:12,background:subTab===t.id?th.p:"#f0f0f0",color:subTab===t.id?"#fff":"#888",transition:"all .2s"}}>
             {t.label}
@@ -1099,21 +1110,6 @@ function ChildMas({ kidId, kid, th, dispatch, challenges }) {
       )}
 
       {subTab==="semana"&&<KidWeekCalendar kid={kid} tasks={[]} th={th}/>}
-
-      {subTab==="fotos"&&(
-        <div>
-          <div style={{fontWeight:900,marginBottom:12,color:"#333"}}>📸 Álbum de evidencias</div>
-          {Object.entries(kid.completions).filter(([,v])=>v.photoUrl).length===0
-            ?<div style={{textAlign:"center",padding:"40px 0",color:"#ccc"}}><div style={{fontSize:48}}>📸</div><div style={{fontWeight:700,marginTop:8}}>No hay fotos aún</div><div style={{fontSize:13}}>Las fotos de evidencia aparecerán aquí</div></div>
-            :<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-              {Object.entries(kid.completions).filter(([,v])=>v.photoUrl).map(([tid,v])=>(
-                <div key={tid} style={{aspectRatio:"1",borderRadius:12,overflow:"hidden",border:`2px solid ${th.p}55`}}>
-                  <img src={v.photoUrl} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-                </div>
-              ))}
-            </div>}
-        </div>
-      )}
     </>
   );
 }
@@ -1341,7 +1337,7 @@ function ParentNotifs({ st, dispatch }) {
               <div style={{flex:1}}>
                 <div style={{fontWeight:800,fontSize:14}}>{k.name} completó:</div>
                 <div style={{color:"#555",fontSize:13,fontWeight:600}}>{task?.emoji} {task?.name}</div>
-                {comp?.evidence&&<div style={{background:"#FFF3CC",borderRadius:8,padding:"3px 10px",fontSize:11,fontWeight:700,color:"#CC8800",marginTop:4,display:"inline-block"}}>📎 Con evidencia</div>}
+                {comp?.photoUrl&&<div style={{background:"#FFF3CC",borderRadius:8,padding:"3px 10px",fontSize:11,fontWeight:700,color:"#CC8800",marginTop:4,display:"inline-block"}}>📸 Con foto</div>}
                 {comp?.photoUrl&&<div style={{marginTop:6,width:60,height:60,borderRadius:10,overflow:"hidden"}}><img src={comp.photoUrl} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>}
                 <div style={{fontSize:11,color:"#bbb",marginTop:3}}>{n.time}</div>
               </div>
@@ -1664,17 +1660,57 @@ function Modal({ st, dispatch }) {
   return null;
 }
 
+function compressImage(file, maxW=800, quality=0.75) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement("canvas");
+      let { width, height } = img;
+      if (width > maxW || height > maxW) {
+        if (width > height) { height = (height / width) * maxW; width = maxW; }
+        else { width = (width / height) * maxW; height = maxW; }
+      }
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+      try {
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Error al cargar imagen")); };
+    img.src = url;
+  });
+}
+
 function EvidenceModal({ m, dispatch }) {
-  const [note,setNote]=useState(""); const [hasPhoto,setHasPhoto]=useState(false);
+  const [photoUrl, setPhotoUrl] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const fileRef = useRef();
+  async function handleFile(e) {
+    const f = e.target.files?.[0];
+    if (!f || !f.type.startsWith("image/")) return;
+    setLoading(true);
+    try {
+      const dataUrl = await compressImage(f);
+      setPhotoUrl(dataUrl);
+    } catch (err) { console.warn(err); }
+    setLoading(false);
+    e.target.value = "";
+  }
   return (
     <>
-      <h2 style={{fontWeight:900,marginBottom:16}}>📎 Agregar evidencia</h2>
-      <button onClick={()=>setHasPhoto(h=>!h)} style={{width:"100%",background:hasPhoto?"#F0FFF4":"#f8f8f8",border:hasPhoto?"2px solid #8DC63F":"2px dashed #ddd",borderRadius:18,padding:20,cursor:"pointer",fontFamily:"'Nunito',sans-serif",marginBottom:12,transition:"all .3s"}}>
-        {hasPhoto?<><div style={{fontSize:36}}>✅</div><div style={{fontWeight:900,color:"#4A7A1E",marginTop:4}}>¡Foto añadida!</div></>:<><div style={{fontSize:36}}>📸</div><div style={{fontWeight:700,color:"#aaa",marginTop:4}}>Tomar foto o subir imagen</div></>}
+      <h2 style={{fontWeight:900,marginBottom:16}}>📸 Agregar foto</h2>
+      <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleFile}/>
+      <button onClick={()=>fileRef.current?.click()} disabled={loading}
+        style={{width:"100%",background:photoUrl?"#F0FFF4":"#f8f8f8",border:photoUrl?"2px solid #8DC63F":"2px dashed #ddd",borderRadius:18,padding:20,cursor:loading?"wait":"pointer",fontFamily:"'Nunito',sans-serif",marginBottom:12,transition:"all .3s"}}>
+        {loading?<><div style={{fontSize:36}}>⏳</div><div style={{fontWeight:700,color:"#888",marginTop:4}}>Comprimiendo...</div></>
+        :photoUrl?<><div style={{fontSize:36}}>✅</div><div style={{fontWeight:900,color:"#4A7A1E",marginTop:4}}>¡Foto lista!</div><img src={photoUrl} alt="" style={{maxWidth:120,maxHeight:120,borderRadius:12,marginTop:8,objectFit:"cover"}}/></>
+        :<><div style={{fontSize:36}}>📸</div><div style={{fontWeight:700,color:"#aaa",marginTop:4}}>Toca para tomar o subir foto</div></>}
       </button>
-      <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Añade una nota..." style={{width:"100%",padding:"14px 16px",borderRadius:16,border:"2px solid #f0f0f0",fontSize:14,resize:"none",height:80,marginBottom:14}}/>
-      <button disabled={!hasPhoto&&!note} onClick={()=>dispatch({type:"SUBMIT_EVIDENCE",kidId:m.kidId,taskId:m.taskId,evidence:{note,hasPhoto},photoUrl:hasPhoto?null:null})}
-        style={{width:"100%",background:(hasPhoto||note)?"linear-gradient(135deg,#8DC63F,#5A9A20)":"#f0f0f0",color:(hasPhoto||note)?"#fff":"#aaa",border:"none",borderRadius:20,padding:16,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,cursor:(hasPhoto||note)?"pointer":"not-allowed"}}>
+      <button disabled={!photoUrl} onClick={()=>{ if(photoUrl) dispatch({type:"SUBMIT_EVIDENCE",kidId:m.kidId,taskId:m.taskId,evidence:true,photoUrl}); }}
+        style={{width:"100%",background:photoUrl?"linear-gradient(135deg,#8DC63F,#5A9A20)":"#f0f0f0",color:photoUrl?"#fff":"#aaa",border:"none",borderRadius:20,padding:16,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,cursor:photoUrl?"pointer":"not-allowed"}}>
         📤 Enviar a papá / mamá
       </button>
     </>
@@ -1973,6 +2009,52 @@ export default function App() {
     });
     return unsub;
   }, [authUser, roleData]);
+
+  // Notificaciones push para el padre (iPhone: añadir app a pantalla de inicio, iOS 16.4+)
+  useEffect(() => {
+    if (typeof window === "undefined" || roleData?.role !== "parent" || !FCM_VAPID_KEY) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const messaging = getMessaging(_app);
+        const permission = await Notification.requestPermission();
+        if (cancelled || permission !== "granted") return;
+        const token = await getToken(messaging, { vapidKey: FCM_VAPID_KEY });
+        if (cancelled || !token) return;
+        await setParentFcmToken(token);
+        rawDispatch(prev => ({ ...prev, parentFcmToken: token }));
+        onMessage(messaging, (payload) => {
+          if (payload?.notification?.title) dispatch({ type: "TOAST", msg: payload.notification.title + (payload.notification.body ? " — " + payload.notification.body : "") });
+        });
+      } catch (e) {
+        if (e?.code !== "messaging/permission-blocked") console.warn("FCM:", e?.message || e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [roleData?.role]);
+
+  // Notificaciones push para el niño (cuando el padre aprueba o rechaza)
+  const childKidId = roleData?.role === "child" ? (roleData?.kidId || st.activeKid) : null;
+  useEffect(() => {
+    if (typeof window === "undefined" || !childKidId || !FCM_VAPID_KEY) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const messaging = getMessaging(_app);
+        const permission = await Notification.requestPermission();
+        if (cancelled || permission !== "granted") return;
+        const token = await getToken(messaging, { vapidKey: FCM_VAPID_KEY });
+        if (cancelled || !token) return;
+        await setChildFcmToken(childKidId, token);
+        onMessage(messaging, (payload) => {
+          if (payload?.notification?.title) dispatch({ type: "TOAST", msg: payload.notification.title + (payload.notification.body ? " — " + payload.notification.body : "") });
+        });
+      } catch (e) {
+        if (e?.code !== "messaging/permission-blocked") console.warn("FCM child:", e?.message || e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [childKidId]);
 
   useEffect(()=>{ if(st.toast){ const t=setTimeout(()=>dispatch({type:"CLEAR_TOAST"}),3500); return()=>clearTimeout(t); } },[st.toast]);
   useEffect(()=>{ if(st.confetti){ const t=setTimeout(()=>dispatch({type:"CLEAR_CONFETTI"}),2800); return()=>clearTimeout(t); } },[st.confetti]);
