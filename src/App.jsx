@@ -20,6 +20,18 @@ const db = getFirestore(_app);
 const FCM_VAPID_KEY = import.meta.env.VITE_FCM_VAPID_KEY || "";
 const _provider = new GoogleAuthProvider();
 
+// Registrar el Service Worker de FCM al cargar para que las notificaciones en segundo plano lleguen
+async function registerFcmSw() {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator) || !FCM_VAPID_KEY) return null;
+  try {
+    const reg = await navigator.serviceWorker.register("/firebase-messaging-sw.js", { scope: "/" });
+    return reg;
+  } catch (e) {
+    console.warn("FCM SW registration:", e?.message || e);
+    return null;
+  }
+}
+
 function loginWithGoogle()          { return signInWithPopup(auth, _provider); }
 function logoutFirebase()            { return signOut(auth); }
 function onAuth(cb)                  { return onAuthStateChanged(auth, cb); }
@@ -2093,9 +2105,15 @@ export default function App() {
   const [authUser, setAuthUser] = useState(undefined); // undefined=loading, null=logged out
   const [roleData, setRoleData] = useState(null);
   const [appLoading, setAppLoading] = useState(true);
+  const fcmSwReg = useRef(null);
 
   const dispatch = useCallback((action) => {
     rawDispatch(prev => reducer(prev, action));
+  }, []);
+
+  // Registrar Service Worker de FCM al montar para que los push en segundo plano se muestren
+  useEffect(() => {
+    registerFcmSw().then((reg) => { if (reg) fcmSwReg.current = reg; });
   }, []);
 
   // Debounced save to Firestore (500ms after last action)
@@ -2232,7 +2250,10 @@ export default function App() {
       const permission = await Notification.requestPermission();
       if (permission !== "granted") return;
       const messaging = getMessaging(_app);
-      const token = await getToken(messaging, { vapidKey: FCM_VAPID_KEY });
+      const token = await getToken(messaging, {
+        vapidKey: FCM_VAPID_KEY,
+        ...(fcmSwReg.current ? { serviceWorkerRegistration: fcmSwReg.current } : {}),
+      });
       if (!token) return;
       await setParentFcmToken(parentRoleForFcm, token);
       rawDispatch(prev => ({ ...prev, parentFcmTokens: { ...(prev.parentFcmTokens||{}), [parentRoleForFcm]: token } }));
@@ -2253,7 +2274,10 @@ export default function App() {
       const permission = await Notification.requestPermission();
       if (permission !== "granted") return;
       const messaging = getMessaging(_app);
-      const token = await getToken(messaging, { vapidKey: FCM_VAPID_KEY });
+      const token = await getToken(messaging, {
+        vapidKey: FCM_VAPID_KEY,
+        ...(fcmSwReg.current ? { serviceWorkerRegistration: fcmSwReg.current } : {}),
+      });
       if (!token) return;
       await setChildFcmToken(childKidId, token);
       dispatch({ type: "TOAST", msg: "🔔 Notificaciones activadas" });
