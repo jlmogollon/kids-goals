@@ -1,0 +1,13 @@
+# Build y despliegue automático en Netlify
+# Cada push a la rama principal ejecutará build y actualizará el sitio
+
+[build]
+  command   = "npm run build"
+  publish   = "dist"
+  base      = "/"
+
+# Redirecciones SPA: todas las rutas van a index.html
+[[redirects]]
+  from    = "/*"
+  to      = "/index.html"
+  status  = 200
