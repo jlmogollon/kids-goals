@@ -901,11 +901,11 @@ function TaskCard({ task, comp, kidId, th, dispatch, idx, mult }) {
       </div>
       {done&&!approved&&(
         <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #f0f0f0"}}>
-          {comp.photoUrl
-            ?<div style={{background:"#FFF3CC",borderRadius:10,padding:"4px 10px",fontSize:11,fontWeight:700,color:"#CC8800"}}>📸 Foto enviada · ⏳ Esperando aprobación</div>
+          {comp.evidence||comp.photoUrl
+            ?<div style={{background:"#FFF3CC",borderRadius:10,padding:"4px 10px",fontSize:11,fontWeight:700,color:"#CC8800"}}>📎 Evidencia enviada · ⏳ Esperando aprobación</div>
             :<button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"evidence",kidId,taskId:task.id}})}
                 style={{width:"100%",background:"#f8f8f8",border:`2px dashed ${th.p}77`,borderRadius:12,padding:8,cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:700,fontSize:12,color:"#888"}}>
-                📸 Agregar foto como evidencia
+                📎 Agregar foto / nota como evidencia
               </button>}
         </div>
       )}
@@ -1337,7 +1337,7 @@ function ParentNotifs({ st, dispatch }) {
               <div style={{flex:1}}>
                 <div style={{fontWeight:800,fontSize:14}}>{k.name} completó:</div>
                 <div style={{color:"#555",fontSize:13,fontWeight:600}}>{task?.emoji} {task?.name}</div>
-                {comp?.photoUrl&&<div style={{background:"#FFF3CC",borderRadius:8,padding:"3px 10px",fontSize:11,fontWeight:700,color:"#CC8800",marginTop:4,display:"inline-block"}}>📸 Con foto</div>}
+                {(comp?.evidence||comp?.photoUrl)&&<div style={{background:"#FFF3CC",borderRadius:8,padding:"3px 10px",fontSize:11,fontWeight:700,color:"#CC8800",marginTop:4,display:"inline-block"}}>📎 Con evidencia</div>}
                 {comp?.photoUrl&&<div style={{marginTop:6,width:60,height:60,borderRadius:10,overflow:"hidden"}}><img src={comp.photoUrl} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>}
                 <div style={{fontSize:11,color:"#bbb",marginTop:3}}>{n.time}</div>
               </div>
@@ -1685,6 +1685,7 @@ function compressImage(file, maxW=800, quality=0.75) {
 }
 
 function EvidenceModal({ m, dispatch }) {
+  const [note, setNote] = useState("");
   const [photoUrl, setPhotoUrl] = useState(null);
   const [loading, setLoading] = useState(false);
   const fileRef = useRef();
@@ -1699,18 +1700,20 @@ function EvidenceModal({ m, dispatch }) {
     setLoading(false);
     e.target.value = "";
   }
+  const hasContent = !!photoUrl || !!note.trim();
   return (
     <>
-      <h2 style={{fontWeight:900,marginBottom:16}}>📸 Agregar foto</h2>
+      <h2 style={{fontWeight:900,marginBottom:16}}>📎 Agregar evidencia</h2>
       <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleFile}/>
       <button onClick={()=>fileRef.current?.click()} disabled={loading}
         style={{width:"100%",background:photoUrl?"#F0FFF4":"#f8f8f8",border:photoUrl?"2px solid #8DC63F":"2px dashed #ddd",borderRadius:18,padding:20,cursor:loading?"wait":"pointer",fontFamily:"'Nunito',sans-serif",marginBottom:12,transition:"all .3s"}}>
         {loading?<><div style={{fontSize:36}}>⏳</div><div style={{fontWeight:700,color:"#888",marginTop:4}}>Comprimiendo...</div></>
-        :photoUrl?<><div style={{fontSize:36}}>✅</div><div style={{fontWeight:900,color:"#4A7A1E",marginTop:4}}>¡Foto lista!</div><img src={photoUrl} alt="" style={{maxWidth:120,maxHeight:120,borderRadius:12,marginTop:8,objectFit:"cover"}}/></>
-        :<><div style={{fontSize:36}}>📸</div><div style={{fontWeight:700,color:"#aaa",marginTop:4}}>Toca para tomar o subir foto</div></>}
+        :photoUrl?<><div style={{fontSize:36}}>✅</div><div style={{fontWeight:900,color:"#4A7A1E",marginTop:4}}>¡Foto añadida!</div><img src={photoUrl} alt="" style={{maxWidth:120,maxHeight:120,borderRadius:12,marginTop:8,objectFit:"cover"}}/></>
+        :<><div style={{fontSize:36}}>📸</div><div style={{fontWeight:700,color:"#aaa",marginTop:4}}>Tomar foto o subir imagen</div></>}
       </button>
-      <button disabled={!photoUrl} onClick={()=>{ if(photoUrl) dispatch({type:"SUBMIT_EVIDENCE",kidId:m.kidId,taskId:m.taskId,evidence:true,photoUrl}); }}
-        style={{width:"100%",background:photoUrl?"linear-gradient(135deg,#8DC63F,#5A9A20)":"#f0f0f0",color:photoUrl?"#fff":"#aaa",border:"none",borderRadius:20,padding:16,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,cursor:photoUrl?"pointer":"not-allowed"}}>
+      <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Añade una nota (opcional)..." style={{width:"100%",padding:"14px 16px",borderRadius:16,border:"2px solid #f0f0f0",fontSize:14,resize:"none",height:80,marginBottom:14}}/>
+      <button disabled={!hasContent} onClick={()=>{ if(hasContent) dispatch({type:"SUBMIT_EVIDENCE",kidId:m.kidId,taskId:m.taskId,evidence:{note:note.trim()||null,hasPhoto:!!photoUrl},photoUrl:photoUrl||null}); }}
+        style={{width:"100%",background:hasContent?"linear-gradient(135deg,#8DC63F,#5A9A20)":"#f0f0f0",color:hasContent?"#fff":"#aaa",border:"none",borderRadius:20,padding:16,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,cursor:hasContent?"pointer":"not-allowed"}}>
         📤 Enviar a papá / mamá
       </button>
     </>
