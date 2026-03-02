@@ -194,7 +194,7 @@ function initState() {
       jose:  mkKid("José",  "2013-06-15"),
       david: mkKid("David", "2016-09-22"),
     },
-    parent: { photo: null, pin: "1234", name: "Padres" },
+    parent: { photo: null, name: "Padres" },
     notifications: [],
     approvalLog: [],
     challenges: [],
@@ -257,7 +257,6 @@ function reducer(st, a) {
     case "SET_KID_PHOTO": return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], photo:a.photo } } };
     case "SET_PARENT_PHOTO": return { ...st, parent:{ ...st.parent, photo:a.photo } };
     case "SET_KID_INFO": return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], name:a.name, dob:a.dob } } };
-    case "SET_PARENT_PIN": return { ...st, parent:{ ...st.parent, pin:a.pin } };
     case "SET_PARENT_NAME": return { ...st, parent:{ ...st.parent, name:a.name } };
     case "SET_PARENT_FCM_TOKEN": return { ...st, parentFcmToken:a.token };
 
@@ -579,13 +578,22 @@ function Confetti() {
 
 function Avatar({ photo, emoji, size=52, color="#ccc", onClick }) {
   const ref=useRef();
+  async function handleFile(e) {
+    const f=e.target.files?.[0];
+    if(!f||!f.type.startsWith("image/")||!onClick)return;
+    try {
+      const dataUrl=await compressImage(f,400,0.7);
+      onClick(dataUrl);
+    }catch(err){console.warn(err);}
+    e.target.value="";
+  }
   return (
     <div style={{position:"relative",width:size,height:size,cursor:onClick?"pointer":"default"}} onClick={()=>onClick&&ref.current?.click()}>
       <div style={{width:size,height:size,borderRadius:"50%",background:photo?"none":`${color}33`,border:`3px solid ${color}`,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",boxSizing:"border-box"}}>
         {photo?<img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:size*.45}}>{emoji}</span>}
       </div>
       {onClick&&<div style={{position:"absolute",bottom:0,right:0,background:color,borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#fff",border:"2px solid #fff"}}>📷</div>}
-      {onClick&&<input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>onClick(ev.target.result);r.readAsDataURL(f);}}/>}
+      {onClick&&<input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>}
     </div>
   );
 }
@@ -725,7 +733,7 @@ function RoleScreen({ user, onRole }) {
 // ═══════════════════════════════════════════════════════════════════════
 // CHILD SCREEN
 // ═══════════════════════════════════════════════════════════════════════
-function ChildScreen({ st, dispatch }) {
+function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt }) {
   const kidId=st.activeKid;
   const kid=st.kids[kidId];
   const th=TH[kidId];
@@ -798,6 +806,11 @@ function ChildScreen({ st, dispatch }) {
 
       {/* Scrollable content */}
       <div className="scroll-body">
+        {showNotifPrompt&&onRequestNotif&&(
+          <button onClick={onRequestNotif} style={{width:"100%",background:`linear-gradient(135deg,${th.p},${th.a})`,color:"#fff",border:"none",borderRadius:16,padding:14,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,cursor:"pointer",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+            🔔 Activar notificaciones — recibirás avisos cuando papá/mamá apruebe tus tareas
+          </button>
+        )}
         <HomeWidget kid={kid} kidId={kidId} tasks={st.tasks}/>
         {st.childTab==="hoy"    && <ChildToday kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} mult={mult}/>}
         {st.childTab==="logros" && <ChildLogros kid={kid} kidId={kidId} as={as} th={th}/>}
@@ -1217,7 +1230,7 @@ function MoneyPanel({ kidId, kid, tasks, th, isParent, dispatch }) {
 // ═══════════════════════════════════════════════════════════════════════
 // PARENT SCREEN
 // ═══════════════════════════════════════════════════════════════════════
-function ParentScreen({ st, dispatch }) {
+function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt }) {
   const th=TH.parent;
   const pendingN=st.notifications.filter(n=>!n.read);
   const tabs=[
@@ -1265,6 +1278,11 @@ function ParentScreen({ st, dispatch }) {
 
       {/* Scrollable content */}
       <div className="scroll-body">
+        {showNotifPrompt&&onRequestNotif&&(
+          <button onClick={onRequestNotif} style={{width:"100%",background:"linear-gradient(135deg,#4A7A1E,#2D5010)",color:"#fff",border:"none",borderRadius:16,padding:14,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,cursor:"pointer",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+            🔔 Activar notificaciones — recibirás avisos cuando los niños completen tareas
+          </button>
+        )}
         {/* Weekly Goal */}
         <div className="card" style={{border:`2px solid ${th.p}44`,background:`${th.p}09`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -1573,7 +1591,6 @@ function KidEditor({ id, kid, dispatch }) {
 }
 
 function ParentConfig({ st, dispatch }) {
-  const [pin,setPin]=useState(""); const [showPin,setShowPin]=useState(false);
   const [pname,setPname]=useState(st.parent.name||"Padres");
   const th=TH.parent;
   return (
@@ -1594,19 +1611,6 @@ function ParentConfig({ st, dispatch }) {
         </div>
         {/* Kids */}
         {["jose","david"].map(id=><KidEditor key={id} id={id} kid={st.kids[id]} dispatch={dispatch}/>)}
-        {/* PIN */}
-        <div style={{paddingTop:12}}>
-          <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>🔒 PIN de padres</div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <div style={{display:"flex",gap:8,flex:1,minWidth:0}}>
-              <input value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,4))} type={showPin?"text":"password"} placeholder="PIN (4 dígitos)" style={{flex:1,minWidth:0,padding:"10px 12px",borderRadius:14,border:"2px solid #f0f0f0",fontSize:15}}/>
-              <button onClick={()=>setShowPin(s=>!s)} style={{background:"#f0f0f0",border:"none",borderRadius:14,width:44,cursor:"pointer",fontSize:16,flexShrink:0}}>{showPin?"🙈":"👁"}</button>
-            </div>
-            <button disabled={pin.length!==4} onClick={()=>{dispatch({type:"SET_PARENT_PIN",pin});setPin("");dispatch({type:"TOAST",msg:"🔒 PIN actualizado"});}}
-              style={{background:pin.length===4?`linear-gradient(135deg,${th.p},${th.a})`:"#f0f0f0",color:pin.length===4?"#fff":"#aaa",border:"none",borderRadius:14,padding:"10px 16px",cursor:pin.length===4?"pointer":"not-allowed",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:13,whiteSpace:"nowrap"}}>💾 Guardar</button>
-          </div>
-          <div style={{fontSize:11,color:"#aaa",marginTop:4}}>PIN actual: {st.parent.pin}</div>
-        </div>
       </div>
 
       {/* Send message to kids */}
@@ -1953,6 +1957,16 @@ export default function App() {
     if (authUser && roleData) debouncedSave(st);
   }, [st]);
 
+  // Guardar foto de padre inmediatamente (el debounce puede no ejecutarse a tiempo)
+  const lastParentPhoto = useRef(st.parent?.photo);
+  useEffect(() => {
+    if (!authUser || roleData?.role !== "parent") return;
+    if (st.parent?.photo !== lastParentPhoto.current) {
+      lastParentPhoto.current = st.parent?.photo;
+      saveAppState(st).catch(console.error);
+    }
+  }, [st.parent?.photo, authUser, roleData?.role]);
+
   // Firebase auth listener
   useEffect(() => {
     const unsub = onAuth(async (user) => {
@@ -2013,50 +2027,44 @@ export default function App() {
     return unsub;
   }, [authUser, roleData]);
 
-  // Notificaciones push para el padre (iPhone: añadir app a pantalla de inicio, iOS 16.4+)
-  useEffect(() => {
-    if (typeof window === "undefined" || roleData?.role !== "parent" || !FCM_VAPID_KEY) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const messaging = getMessaging(_app);
-        const permission = await Notification.requestPermission();
-        if (cancelled || permission !== "granted") return;
-        const token = await getToken(messaging, { vapidKey: FCM_VAPID_KEY });
-        if (cancelled || !token) return;
-        await setParentFcmToken(token);
-        rawDispatch(prev => ({ ...prev, parentFcmToken: token }));
-        onMessage(messaging, (payload) => {
-          if (payload?.notification?.title) dispatch({ type: "TOAST", msg: payload.notification.title + (payload.notification.body ? " — " + payload.notification.body : "") });
-        });
-      } catch (e) {
-        if (e?.code !== "messaging/permission-blocked") console.warn("FCM:", e?.message || e);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [roleData?.role]);
+  // Notificaciones push: el permiso debe pedirse con un gesto del usuario (tap). Guardamos el handler.
+  const requestParentNotif = useCallback(async () => {
+    if (typeof window === "undefined" || !FCM_VAPID_KEY) return;
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") return;
+      const messaging = getMessaging(_app);
+      const token = await getToken(messaging, { vapidKey: FCM_VAPID_KEY });
+      if (!token) return;
+      await setParentFcmToken(token);
+      rawDispatch(prev => ({ ...prev, parentFcmToken: token }));
+      dispatch({ type: "TOAST", msg: "🔔 Notificaciones activadas" });
+      onMessage(messaging, (payload) => {
+        if (payload?.notification?.title) dispatch({ type: "TOAST", msg: payload.notification.title + (payload.notification.body ? " — " + payload.notification.body : "") });
+      });
+    } catch (e) {
+      if (e?.code !== "messaging/permission-blocked") console.warn("FCM:", e?.message || e);
+    }
+  }, []);
 
-  // Notificaciones push para el niño (cuando el padre aprueba o rechaza)
+  // Notificaciones push para el niño (gesto del usuario requerido)
   const childKidId = roleData?.role === "child" ? (roleData?.kidId || st.activeKid) : null;
-  useEffect(() => {
+  const requestChildNotif = useCallback(async () => {
     if (typeof window === "undefined" || !childKidId || !FCM_VAPID_KEY) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const messaging = getMessaging(_app);
-        const permission = await Notification.requestPermission();
-        if (cancelled || permission !== "granted") return;
-        const token = await getToken(messaging, { vapidKey: FCM_VAPID_KEY });
-        if (cancelled || !token) return;
-        await setChildFcmToken(childKidId, token);
-        onMessage(messaging, (payload) => {
-          if (payload?.notification?.title) dispatch({ type: "TOAST", msg: payload.notification.title + (payload.notification.body ? " — " + payload.notification.body : "") });
-        });
-      } catch (e) {
-        if (e?.code !== "messaging/permission-blocked") console.warn("FCM child:", e?.message || e);
-      }
-    })();
-    return () => { cancelled = true; };
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") return;
+      const messaging = getMessaging(_app);
+      const token = await getToken(messaging, { vapidKey: FCM_VAPID_KEY });
+      if (!token) return;
+      await setChildFcmToken(childKidId, token);
+      dispatch({ type: "TOAST", msg: "🔔 Notificaciones activadas" });
+      onMessage(messaging, (payload) => {
+        if (payload?.notification?.title) dispatch({ type: "TOAST", msg: payload.notification.title + (payload.notification.body ? " — " + payload.notification.body : "") });
+      });
+    } catch (e) {
+      if (e?.code !== "messaging/permission-blocked") console.warn("FCM child:", e?.message || e);
+    }
   }, [childKidId]);
 
   useEffect(()=>{ if(st.toast){ const t=setTimeout(()=>dispatch({type:"CLEAR_TOAST"}),3500); return()=>clearTimeout(t); } },[st.toast]);
@@ -2091,8 +2099,8 @@ export default function App() {
               loggedAccount:{...r, uid:authUser.uid, googlePhoto:authUser.photoURL}}));
           }}/>
         )}
-        {authUser && roleData && st.screen==="child"  && <ChildScreen st={st} dispatch={dispatch}/>}
-        {authUser && roleData && st.screen==="parent" && <ParentScreen st={st} dispatch={dispatch}/>}
+        {authUser && roleData && st.screen==="child"  && <ChildScreen st={st} dispatch={dispatch} onRequestNotif={requestChildNotif} showNotifPrompt={!!childKidId&&!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"}/>}
+        {authUser && roleData && st.screen==="parent" && <ParentScreen st={st} dispatch={dispatch} onRequestNotif={requestParentNotif} showNotifPrompt={!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"}/>}
 
         <Modal st={st} dispatch={dispatch}/>
       </div>
