@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
-import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
 
 // ── Firebase setup ────────────────────────────────────────────
 const _app = initializeApp({
@@ -13,7 +13,10 @@ const _app = initializeApp({
   appId: "1:674188476039:web:d339b18f06f0f600968222",
 });
 const auth = getAuth(_app);
-const db   = getFirestore(_app);
+// Persistencia local: datos en caché y se mantienen (incl. después de 30 días de inactividad)
+const db = initializeFirestore(_app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+});
 const _provider = new GoogleAuthProvider();
 
 function loginWithGoogle()          { return signInWithPopup(auth, _provider); }
@@ -384,9 +387,9 @@ const CSS = `
   --kg-overlay:rgba(0,0,0,.5);
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html{height:100%;overflow:hidden;width:100%}
-body{height:100%;min-height:100dvh;width:100%;background:var(--kg-bg);font-family:'Nunito',sans-serif;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;overflow:hidden}
-#root{height:100%;min-height:100dvh;width:100%}
+html{height:100%;width:100%;overflow-x:hidden}
+body{min-height:100%;min-height:100dvh;width:100%;background:var(--kg-bg);font-family:'Nunito',sans-serif;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;overflow-x:hidden}
+#root{min-height:100%;min-height:100dvh;width:100%}
 
 /* App shell — full width on mobile, centered card on desktop */
 .app{
@@ -412,18 +415,21 @@ body{height:100%;min-height:100dvh;width:100%;background:var(--kg-bg);font-famil
   flex:1;
   display:flex;
   flex-direction:column;
+  min-height:0;
   overflow:hidden;
   width:100%;
 }
 
-/* Scrollable body area inside screens */
+/* Scrollable body area — min-height:0 allows flex child to scroll */
 .scroll-body{
   flex:1;
+  min-height:0;
   overflow-y:auto;
   overflow-x:hidden;
   -webkit-overflow-scrolling:touch;
+  overscroll-behavior-y:contain;
   padding:12px 16px;
-  padding-bottom:calc(86px + env(safe-area-inset-bottom,0px));
+  padding-bottom:calc(90px + env(safe-area-inset-bottom,0px));
   width:100%;
 }
 
@@ -435,17 +441,23 @@ body{height:100%;min-height:100dvh;width:100%;background:var(--kg-bg);font-famil
   width:100%;
 }
 
-/* Tab bar */
+/* Tab bar — fija abajo para que siempre sea visible */
 .tab-bar{
-  flex-shrink:0;
+  position:fixed;
+  bottom:0;
+  left:0;
+  right:0;
   display:flex;
   background:var(--kg-surface);
   border-top:1.5px solid var(--kg-border-light);
   padding:6px 0;
   padding-bottom:max(14px,env(safe-area-inset-bottom,0px));
   width:100%;
+  max-width:430px;
+  margin:0 auto;
   z-index:50;
 }
+@media (max-width:430px){ .tab-bar{ max-width:none } }
 .tab-item{
   flex:1;
   display:flex;
