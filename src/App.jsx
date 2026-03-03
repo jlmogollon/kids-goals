@@ -686,7 +686,7 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData }
         {st.childTab==="mensajes"  && <ChildMensajes kidId={kidId} kid={kid} th={th} dispatch={dispatch}/>}
         {st.childTab==="logros"    && <ChildLogros kid={kid} kidId={kidId} as={as} th={th}/>}
         {st.childTab==="tienda"    && <ChildTienda kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} avail={avail}/>}
-        {st.childTab==="dinero"    && <MoneyPanel kidId={kidId} kid={kid} tasks={st.tasks} th={th} isParent={false} dispatch={dispatch}/>}
+        {st.childTab==="dinero"    && <MoneyPanel kidId={kidId} kid={kid} tasks={st.tasks} th={th} isParent={false} dispatch={dispatch} approvalLog={st.approvalLog}/>}
         {st.childTab==="mas"       && <ChildMas kidId={kidId} kid={kid} th={th} dispatch={dispatch} challenges={st.challenges}/>}
       </div>
 
@@ -1094,7 +1094,7 @@ function KidWeekCalendar({ kid, th }) {
 // ═══════════════════════════════════════════════════════════════════════
 // MONEY PANEL — shared kid/parent
 // ═══════════════════════════════════════════════════════════════════════
-const MoneyPanel = memo(function MoneyPanel({ kidId, kid, tasks, th, isParent, dispatch }) {
+const MoneyPanel = memo(function MoneyPanel({ kidId, kid, tasks, th, isParent, dispatch, approvalLog }) {
   const as = useMemo(() => approvedStars(kid, tasks), [kid, tasks]);
   const te = Math.floor(as/STARS_PER_EURO);
   const paid = paidOut(kid);
@@ -1135,11 +1135,11 @@ const MoneyPanel = memo(function MoneyPanel({ kidId, kid, tasks, th, isParent, d
 
       <div className="card">
         <h4 style={{fontWeight:900,marginBottom:10}}>Historial detallado</h4>
-        {kid.payments.length===0 && st.approvalLog.filter(l=>l.kidId===kidId).length===0
+        {kid.payments.length===0 && (approvalLog||[]).filter(l=>l.kidId===kidId).length===0
           ?<div style={{textAlign:"center",color:"#ccc",padding:"20px 0",fontWeight:700}}>Sin movimientos aún</div>
           :(
             <>
-              {st.approvalLog.filter(l=>l.kidId===kidId).slice(0,10).map(l=>(
+              {(approvalLog||[]).filter(l=>l.kidId===kidId).slice(0,10).map(l=>(
                 <div key={l.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f5f5f5"}}>
                   <div>
                     <div style={{fontWeight:800,fontSize:13}}>{l.approved?"✅":"❌"} {l.taskName}</div>
@@ -1385,9 +1385,17 @@ function ParentMensajesYGratitud({ st, dispatch }) {
 
 // ─── PARENT TAREAS ──────────────────────────────────────────────
 function ParentTareas({ st, dispatch }) {
-  const byDay={todos:[],lv:[],sab:[],dom:[],finde:[]};
-  st.tasks.forEach(t=>{ const k=t.days||"todos"; if(byDay[k]) byDay[k].push(t); else byDay.todos.push(t); });
-  const sections=[{k:"todos",l:"🌞 Todos los días"},{k:"lv",l:"📚 Lun–Vie"},{k:"sab",l:"🧹 Sábado"},{k:"dom",l:"🏡 Domingo"},{k:"finde",l:"🎯 Fin de semana"}];
+  const byDay={todos:[],lv:[],sab:[],dom:[]};
+  st.tasks.forEach(t=>{
+    const k=t.days||"todos";
+    if(k==="finde"){
+      byDay.sab.push(t);
+      byDay.dom.push(t);
+      return;
+    }
+    if(byDay[k]) byDay[k].push(t); else byDay.todos.push(t);
+  });
+  const sections=[{k:"todos",l:"🌞 Todos los días"},{k:"lv",l:"📚 Lun–Vie"},{k:"sab",l:"🧹 Sábado"},{k:"dom",l:"🏡 Domingo"}];
 
   return (
     <>
@@ -1474,7 +1482,7 @@ function ParentDinero({ st, dispatch }) {
         </div>
       )}
 
-      <MoneyPanel kidId={activeKid} kid={kid} tasks={st.tasks} th={TH[activeKid]} isParent={true} dispatch={dispatch}/>
+      <MoneyPanel kidId={activeKid} kid={kid} tasks={st.tasks} th={TH[activeKid]} isParent={true} dispatch={dispatch} approvalLog={st.approvalLog}/>
     </>
   );
 }
@@ -1811,7 +1819,7 @@ function TaskFormModal({ m, dispatch }) {
         </div>
       ))}
       {[
-        {l:"Días",k:"days",opts:[["todos","Todos los días"],["lv","Lun – Vie"],["sab","Sábado"],["dom","Domingo"],["finde","Fin de semana"]]},
+        {l:"Días",k:"days",opts:[["todos","Todos los días"],["lv","Lun – Vie"],["sab","Sábado"],["dom","Domingo"]]},
         {l:"Horario",k:"time",opts:[["Mañana","Mañana"],["Tarde","Tarde"],["Noche","Noche"],["Mañana, tarde y noche","Todo el día"]]},
         {l:"Duración",k:"dur",opts:[["5 min","5 min"],["10 min","10 min"],["15 min","15 min"],["20 min","20 min"],["30 min","30 min"]]},
         {l:"Estrellas",k:"stars",opts:[["1","⭐ 1"],["2","⭐⭐ 2"],["3","⭐⭐⭐ 3"]]},
