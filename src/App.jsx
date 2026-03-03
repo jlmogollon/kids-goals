@@ -81,13 +81,6 @@ function subscribeAppState(cb) { return onSnapshot(doc(db,"appData","main"),(s)=
 
 import { TH, PALETTE, FIXED_PARENT_EMAILS, CAT_CLR, STARS_PER_EURO, LEVELS, DAY_LABELS, DAY_SHORT, DAY_FULL, DEMO_ACCOUNTS, ACHIEV, PRIVILEGES, INIT_TASKS } from "./constants";
 import { getTodayIdx, taskActiveOn, taskActiveToday, calcAge, getLevel, getNextLevel, getStreakMult, fmt, isToday, approvedStars, availableStars, pendingStars, totalEuros, paidOut, balance, kidName, checkNewAchievements, mkKid, initState } from "./utils";
-function isToday(dateStr) {
-  if (!dateStr) return true;
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return true;
-  const t = new Date();
-  return d.getFullYear()===t.getFullYear() && d.getMonth()===t.getMonth() && d.getDate()===t.getDate();
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // INITIAL TASKS
