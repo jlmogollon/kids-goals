@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
@@ -41,6 +41,14 @@ async function loadAppState() {
   const s=await getDoc(doc(db,"appData","main"));
   if(!s.exists()) return null;
   const d=s.data();
+  // Asegurar que siempre tenemos las tareas iniciales más nuevas
+  if (Array.isArray(d.tasks) && d.tasks.length>0) {
+    const existingIds = new Set(d.tasks.map(t=>t.id));
+    const extra = INIT_TASKS.filter(t=>!existingIds.has(t.id));
+    if (extra.length>0) d.tasks = [...d.tasks, ...extra];
+  } else {
+    d.tasks = INIT_TASKS;
+  }
   // Migrar parent antiguo → parents
   if(d.parent && !d.parents) {
     d.parents={ father: { ...d.parent, name: d.parent.name||"Papá" }, mother: { ...d.parent, name: d.parent.name||"Mamá" } };
@@ -71,204 +79,19 @@ async function setChildFcmToken(kidId, token) {
 }
 function subscribeAppState(cb) { return onSnapshot(doc(db,"appData","main"),(s)=>{ if(s.exists()) cb(s.data()); }); }
 
-// ═══════════════════════════════════════════════════════════════════════
-// THEME & CONSTANTS
-// ═══════════════════════════════════════════════════════════════════════
-/* Paleta unificada — misma línea de diseño */
-const TH = {
-  jose:   { p:"#8DC63F", a:"#5A9A20", l:"#F0FAE6", d:"#3A6A10" },
-  david:  { p:"#5BC8F5", a:"#1FA8DE", l:"#EBF8FF", d:"#0D7FAD" },
-  parent: { p:"#FFB800", a:"#CC8800", l:"#FFFBEA", d:"#996600" },
-};
-const PALETTE = { error:"#C62828", primaryDark:"#2D5010", primaryMuted:"#4A7A1E", gold:"#CC8800", goldLight:"#FFF3CC", text:"#1a1a1a", textSec:"#555", muted:"#888", border:"#f0f0f0", borderLight:"#e8e8e8" };
-const FIXED_PARENT_EMAILS = { "monsterk17@gmail.com": "father", "cilvane2017@gmail.com": "mother" };
-const CAT_CLR = { espiritual:"#FF85C2", musica:"#8DC63F", colegio:"#5BC8F5", higiene:"#A78BFA", hogar:"#FFB800", mente:"#FF8C42" };
-const STARS_PER_EURO = 30;
-const LEVELS = [
-  { name:"Aprendiz",   min:0,   icon:"🌱", color:"#8DC63F" },
-  { name:"Explorador", min:30,  icon:"🧭", color:"#5BC8F5" },
-  { name:"Héroe",      min:90,  icon:"🦸", color:"#FFB800" },
-  { name:"Leyenda",    min:200, icon:"👑", color:"#FF85C2" },
-];
-const DAY_LABELS = { todos:"Todos los días", lv:"Lun – Vie", sab:"Sábado", dom:"Domingo" };
-const DAY_SHORT  = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
-const DAY_FULL   = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
-
-// Apple ID demo accounts
-const DEMO_ACCOUNTS = [
-  { id:"acc_papa",  name:"Papá",  email:"papa@icloud.com",  role:"parent", isMinor:false, avatar:"👨" },
-  { id:"acc_mama",  name:"Mamá",  email:"mama@icloud.com",  role:"parent", isMinor:false, avatar:"👩" },
-  { id:"acc_jose",  name:"José",  email:"jose@icloud.com",  role:"child",  kidId:"jose", isMinor:true,  dob:"2013-06-15", avatar:"👦🏻" },
-  { id:"acc_david", name:"David", email:"david@icloud.com", role:"child",  kidId:"david",isMinor:true,  dob:"2016-09-22", avatar:"👦" },
-];
-
-// ═══════════════════════════════════════════════════════════════════════
-// UTILITIES
-// ═══════════════════════════════════════════════════════════════════════
-function getTodayIdx() { const d=new Date().getDay(); return d===0?6:d-1; }
-function taskActiveOn(days,idx) {
-  if(!days||days==="todos") return true;
-  if(days==="lv") return idx<=4;
-  if(days==="sab") return idx===5;
-  if(days==="dom") return idx===6;
-  if(days==="finde") return idx>=5;
-  return true;
+import { TH, PALETTE, FIXED_PARENT_EMAILS, CAT_CLR, STARS_PER_EURO, LEVELS, DAY_LABELS, DAY_SHORT, DAY_FULL, DEMO_ACCOUNTS, ACHIEV, PRIVILEGES, INIT_TASKS } from "./constants";
+import { getTodayIdx, taskActiveOn, taskActiveToday, calcAge, getLevel, getNextLevel, getStreakMult, fmt, isToday, approvedStars, availableStars, pendingStars, totalEuros, paidOut, balance, kidName, checkNewAchievements, mkKid, initState } from "./utils";
+function isToday(dateStr) {
+  if (!dateStr) return true;
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return true;
+  const t = new Date();
+  return d.getFullYear()===t.getFullYear() && d.getMonth()===t.getMonth() && d.getDate()===t.getDate();
 }
-function taskActiveToday(days) { return taskActiveOn(days, getTodayIdx()); }
-function calcAge(dob) {
-  if(!dob) return null;
-  const t=new Date(), b=new Date(dob);
-  let a=t.getFullYear()-b.getFullYear();
-  if(t.getMonth()-b.getMonth()<0||(t.getMonth()===b.getMonth()&&t.getDate()<b.getDate())) a--;
-  return a;
-}
-function getLevel(stars) {
-  let lv=LEVELS[0];
-  for(const l of LEVELS) { if(stars>=l.min) lv=l; }
-  return lv;
-}
-function getNextLevel(stars) {
-  for(let i=0;i<LEVELS.length;i++) { if(LEVELS[i].min>stars) return LEVELS[i]; }
-  return null;
-}
-function getStreakMult(streak) {
-  if(streak>=7) return 2;
-  if(streak>=5) return 1.5;
-  return 1;
-}
-function fmt(d) { return new Date(d).toLocaleDateString("es-ES",{day:"2-digit",month:"short"}); }
 
 // ═══════════════════════════════════════════════════════════════════════
 // INITIAL TASKS
 // ═══════════════════════════════════════════════════════════════════════
-const INIT_TASKS = [
-  { id:1,  name:"Leer la Biblia",               days:"todos", time:"Tarde",               dur:"15 min", stars:2, emoji:"📖", cat:"espiritual", deadline:null, isSpecial:false },
-  { id:2,  name:"Leer Devocional",              days:"todos", time:"Tarde",               dur:"5 min",  stars:2, emoji:"🙏", cat:"espiritual", deadline:null, isSpecial:false },
-  { id:3,  name:"Practicar batería",            days:"todos", time:"Tarde",               dur:"10 min", stars:1, emoji:"🥁", cat:"musica",     deadline:null, isSpecial:false },
-  { id:4,  name:"Practicar piano",              days:"todos", time:"Tarde",               dur:"20 min", stars:2, emoji:"🎹", cat:"musica",     deadline:null, isSpecial:false },
-  { id:5,  name:"Repasar lecciones del colegio",days:"lv",   time:"Tarde",               dur:"10 min", stars:1, emoji:"📚", cat:"colegio",    deadline:null, isSpecial:false },
-  { id:6,  name:"Realizar deberes del colegio", days:"lv",   time:"Tarde",               dur:"20 min", stars:1, emoji:"✏️", cat:"colegio",    deadline:null, isSpecial:false },
-  { id:7,  name:"Cepillarse los dientes",       days:"todos", time:"Mañana, tarde, noche",dur:"5 min",  stars:1, emoji:"🦷", cat:"higiene",    deadline:null, isSpecial:false },
-  { id:8,  name:"Echarse crema y peinarse",     days:"todos", time:"Mañana",              dur:"5 min",  stars:1, emoji:"💆", cat:"higiene",    deadline:null, isSpecial:false },
-  { id:9,  name:"Crucigrama o sopa de letras",  days:"lv",   time:"Tarde",               dur:"10 min", stars:1, emoji:"🧩", cat:"mente",      deadline:null, isSpecial:false },
-  { id:10, name:"Organizar cama y alrededores", days:"lv",   time:"Tarde",               dur:"15 min", stars:1, emoji:"🛏️", cat:"hogar",      deadline:null, isSpecial:false },
-  { id:11, name:"Organizar bolso",              days:"lv",   time:"Tarde",               dur:"5 min",  stars:1, emoji:"🎒", cat:"hogar",      deadline:null, isSpecial:false },
-  { id:12, name:"Organizar ropa del colegio",   days:"lv",   time:"Tarde",               dur:"5 min",  stars:1, emoji:"👕", cat:"hogar",      deadline:null, isSpecial:false },
-  { id:13, name:"Preparar desayuno",            days:"sab",  time:"Mañana",              dur:"20 min", stars:1, emoji:"🍳", cat:"hogar",      deadline:null, isSpecial:false },
-  { id:14, name:"Lavar y tender ropa",          days:"sab",  time:"Mañana",              dur:"20 min", stars:1, emoji:"👗", cat:"hogar",      deadline:null, isSpecial:false },
-  { id:15, name:"Recoger y doblar ropa",        days:"dom",  time:"Tarde",               dur:"20 min", stars:1, emoji:"🧺", cat:"hogar",      deadline:null, isSpecial:false },
-];
-
-// ═══════════════════════════════════════════════════════════════════════
-// ACHIEVEMENTS
-// ═══════════════════════════════════════════════════════════════════════
-const ACHIEV = [
-  { id:"first",       label:"Primera misión",       desc:"Completa tu primera tarea",     emoji:"🌟", bonus:1, diff:1, check:s=>s.totalDone>=1       },
-  { id:"streak3",     label:"En racha",             desc:"3 días seguidos",               emoji:"🔥", bonus:1, diff:1, check:s=>s.streak>=3           },
-  { id:"tasks10",     label:"Decena de oro",        desc:"10 tareas completadas",         emoji:"🥉", bonus:1, diff:1, check:s=>s.totalDone>=10       },
-  { id:"allToday",    label:"Día perfecto",         desc:"Todas las tareas de hoy",       emoji:"✨", bonus:2, diff:2, check:s=>s.allToday            },
-  { id:"bible7",      label:"Lector fiel",          desc:"Biblia 7 días seguidos",        emoji:"📖", bonus:2, diff:2, check:s=>(s.taskStreaks?.[1]||0)>=7 },
-  { id:"music5",      label:"Músico dedicado",      desc:"Practica música 5 días",        emoji:"🎵", bonus:2, diff:2, check:s=>s.musicDays>=5        },
-  { id:"tasks25",     label:"Trabajador incansable",desc:"25 tareas completadas",         emoji:"💪", bonus:2, diff:2, check:s=>s.totalDone>=25       },
-  { id:"stars30",     label:"Primer euro",          desc:"30 estrellas aprobadas",        emoji:"💶", bonus:1, diff:1, check:s=>s.approvedStars>=30   },
-  { id:"streak7",     label:"Semana perfecta",      desc:"7 días seguidos",               emoji:"🌈", bonus:2, diff:2, check:s=>s.streak>=7           },
-  { id:"hygiene7",    label:"Súper limpio",         desc:"Higiene 7 días seguidos",       emoji:"🦷", bonus:2, diff:2, check:s=>s.hygieneStreak>=7    },
-  { id:"tasks50",     label:"Héroe del hogar",      desc:"50 tareas completadas",         emoji:"🦸", bonus:3, diff:3, check:s=>s.totalDone>=50       },
-  { id:"stars90",     label:"Tres euros de racha",  desc:"90 estrellas aprobadas",        emoji:"💰", bonus:2, diff:2, check:s=>s.approvedStars>=90   },
-  { id:"streak14",    label:"Dos semanas épicas",   desc:"14 días sin parar",             emoji:"🏆", bonus:3, diff:3, check:s=>s.streak>=14          },
-  { id:"tasks100",    label:"Leyenda",              desc:"100 tareas completadas",        emoji:"👑", bonus:3, diff:3, check:s=>s.totalDone>=100      },
-  { id:"wishDone",    label:"Primer deseo cumplido",desc:"Un deseo fue aprobado",         emoji:"🌠", bonus:2, diff:2, check:s=>s.wishApproved>=1     },
-  { id:"mult",        label:"En modo turbo",        desc:"Alcanzas multiplicador x2",     emoji:"⚡", bonus:2, diff:2, check:s=>s.streak>=7           },
-];
-
-// ═══════════════════════════════════════════════════════════════════════
-// PRIVILEGE STORE ITEMS
-// ═══════════════════════════════════════════════════════════════════════
-const PRIVILEGES = [
-  { id:"p1", name:"+30 min pantalla",     cost:10, emoji:"📱", desc:"Extra de pantalla un día" },
-  { id:"p2", name:"Elegir la cena",       cost:15, emoji:"🍕", desc:"Elige qué cena pides" },
-  { id:"p3", name:"Película del viernes", cost:20, emoji:"🎬", desc:"Tú eliges la peli familiar" },
-  { id:"p4", name:"Dormir más tarde",     cost:25, emoji:"🌙", desc:"Una hora más hasta dormir" },
-  { id:"p5", name:"Día de aventura",      cost:50, emoji:"🎡", desc:"Salida especial de tu elección" },
-  { id:"p6", name:"Videojuego nuevo",     cost:80, emoji:"🎮", desc:"Un juego a elegir" },
-];
-
-// ═══════════════════════════════════════════════════════════════════════
-// INITIAL STATE
-// ═══════════════════════════════════════════════════════════════════════
-function mkKid(name, dob) {
-  return {
-    name, dob,
-    photo: null,
-    completions: {},   // taskId -> { done, approved, evidence, date, photoUrl }
-    achievements: [],
-    bonusStars: 0,
-    spentStars: 0,     // stars spent on privileges
-    stats: { totalDone:0, streak:0, musicDays:0, hygieneStreak:0, taskStreaks:{}, allToday:false, wishApproved:0, approvedStars:0 },
-    payments: [],      // { id, amount, note, date }
-    wishlist: [],      // { id, name, cost, emoji, approved, denied }
-    privileges: [],    // { id, item, date }
-    gratitude: [],     // { date, text }
-    weeklyGoal: null,  // { target, stars }
-    activityLog: {},   // "YYYY-MM-DD" -> { done, total }
-    messages: [],      // { from, text, date, read }
-    challenges: [],    // { id, opponentId, taskId, myCount, theirCount, deadline, winner }
-  };
-}
-
-function initState() {
-  return {
-    screen: "auth",    // auth | welcome | child | parent
-    loggedAccount: null,
-    activeKid: null,
-    tasks: INIT_TASKS,
-    kids: {
-      jose:  mkKid("José",  "2013-06-15"),
-      david: mkKid("David", "2016-09-22"),
-    },
-    parents: { father: { photo: null, name: "Papá" }, mother: { photo: null, name: "Mamá" } },
-    notifications: [],
-    approvalLog: [],
-    challenges: [],
-    weeklyGoal: { target: 40, current: 0 },
-    // UI
-    childTab: "hoy",
-    parentTab: "notifs",
-    modal: null,
-    toast: null,
-    confetti: false,
-    nextId: 200,
-    parentFcmTokens: { father: null, mother: null },
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════════════════════
-function approvedStars(kid, tasks) {
-  return Object.entries(kid.completions)
-    .filter(([,v])=>v.approved)
-    .reduce((a,[tid])=>{ const t=tasks.find(t=>t.id===parseInt(tid)); return a+(t?.stars||0); },0)
-    + kid.bonusStars;
-}
-function availableStars(kid, tasks) {
-  return approvedStars(kid, tasks) - kid.spentStars;
-}
-function pendingStars(kid, tasks) {
-  return Object.entries(kid.completions)
-    .filter(([,v])=>v.done&&!v.approved)
-    .reduce((a,[tid])=>{ const t=tasks.find(t=>t.id===parseInt(tid)); return a+(t?.stars||0); },0);
-}
-function totalEuros(kid, tasks) { return Math.floor(approvedStars(kid,tasks)/STARS_PER_EURO); }
-function paidOut(kid) { return kid.payments.reduce((a,p)=>a+p.amount,0); }
-function balance(kid, tasks) { return totalEuros(kid,tasks)-paidOut(kid); }
-function kidName(kid, id) { return kid?.name||(id==="jose"?"José":"David"); }
-
-function checkNewAchievements(kid, tasks) {
-  const as = approvedStars(kid,tasks);
-  const s = { ...kid.stats, approvedStars: as };
-  return ACHIEV.filter(a=>!kid.achievements.includes(a.id)&&a.check(s));
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // REDUCER
@@ -296,7 +119,7 @@ function reducer(st, a) {
       const { kidId, taskId } = a;
       const task = st.tasks.find(t=>t.id===taskId);
       const mult = getStreakMult(st.kids[kidId].stats.streak||0);
-      const comp = { done:true, approved:false, evidence:null, photoUrl:null, date:new Date().toLocaleTimeString("es-ES"), mult };
+      const comp = { done:true, approved:false, evidence:null, photoUrl:null, date:new Date().toISOString(), mult };
       const newKid = { ...st.kids[kidId], completions:{ ...st.kids[kidId].completions, [taskId]:comp },
         stats:{ ...st.kids[kidId].stats, totalDone:(st.kids[kidId].stats.totalDone||0)+1 } };
       const notif = { id:Date.now(), kidId, taskId, time:new Date().toLocaleTimeString("es-ES"), read:false, type:"task" };
@@ -315,6 +138,7 @@ function reducer(st, a) {
       const { kidId, taskId, notifId, message, approvedBy } = a;
       const task = st.tasks.find(t=>t.id===taskId);
       const comp = { ...st.kids[kidId].completions[taskId], approved:true, evidence:null, photoUrl:null, approvedBy: approvedBy||"parent" };
+      const effStars = Math.ceil((task?.stars||0) * (comp.mult && comp.mult>1 ? comp.mult : 1));
       let kid = { ...st.kids[kidId], completions:{ ...st.kids[kidId].completions, [taskId]:comp } };
       // Add encouragement message if provided
       if(message) kid = { ...kid, messages:[{ id:Date.now(), from:"parent", text:message, date:new Date().toLocaleTimeString("es-ES"), read:false },...kid.messages] };
@@ -327,10 +151,10 @@ function reducer(st, a) {
         achToast=` 🏅 ¡${newAch[0].label}! +${bonusAdded}⭐`;
       }
       const newNotifs=st.notifications.map(n=>n.id===notifId?{...n,read:true}:n);
-      const logEntry={ id:Date.now(), kidId, taskId, taskName:task?.name, stars:task?.stars, date:new Date().toLocaleDateString("es-ES"), approved:true, approvedBy: approvedBy||"parent" };
+      const logEntry={ id:Date.now(), kidId, taskId, taskName:task?.name, stars:effStars, date:new Date().toLocaleDateString("es-ES"), approved:true, approvedBy: approvedBy||"parent" };
       return { ...st, kids:{ ...st.kids, [kidId]:kid }, notifications:newNotifs, confetti:true,
         approvalLog:[logEntry,...st.approvalLog],
-        toast:`⭐ +${task?.stars}${bonusAdded>0?`+${bonusAdded}bonus`:""} estrellas para ${kidName(st.kids[kidId],kidId)}!${achToast}` };
+        toast:`⭐ +${effStars}${bonusAdded>0?`+${bonusAdded}bonus`:""} estrellas para ${kidName(st.kids[kidId],kidId)}!${achToast}` };
     }
 
     case "REJECT_TASK": {
@@ -659,7 +483,10 @@ function HomeWidget({ kid, kidId, tasks }) {
   const lv=getLevel(as);
   const th=TH[kidId];
   const todayT=tasks.filter(t=>taskActiveToday(t.days));
-  const doneT=todayT.filter(t=>kid.completions[t.id]?.done).length;
+  const doneT=todayT.filter(t=>{
+    const c=kid.completions[t.id];
+    return c?.done && isToday(c.date);
+  }).length;
   return (
     <div className="widget">
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -790,7 +617,10 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData }
   const nextLv=getNextLevel(as);
   const mult=getStreakMult(kid.stats.streak||0);
   const todayT=st.tasks.filter(t=>taskActiveToday(t.days));
-  const doneToday=todayT.filter(t=>kid.completions[t.id]?.done).length;
+  const doneToday=todayT.filter(t=>{
+    const c=kid.completions[t.id];
+    return c?.done && isToday(c.date);
+  }).length;
   const bal=balance(kid,st.tasks);
   const unreadMsgs=kid.messages.filter(m=>!m.read).length;
   const avail=availableStars(kid,st.tasks);
@@ -881,7 +711,7 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData }
 }
 
 // ─── CENTRO DE MENSAJES (niño) ──────────────────────────────────
-function ChildMensajes({ kidId, kid, th, dispatch }) {
+const ChildMensajes = memo(function ChildMensajes({ kidId, kid, th, dispatch }) {
   const messages = [...(kid.messages||[])].reverse();
   useEffect(() => {
     if ((kid.messages||[]).some(m=>!m.read)) dispatch({ type: "READ_MESSAGES", kidId });
@@ -905,15 +735,27 @@ function ChildMensajes({ kidId, kid, th, dispatch }) {
       )}
     </div>
   );
-}
+});
 
 // ─── CHILD TODAY ────────────────────────────────────────────────
-function ChildToday({ kidId, kid, tasks, th, dispatch, mult }) {
-  const todayIdx=getTodayIdx();
-  const todayT=tasks.filter(t=>taskActiveToday(t.days));
-  const otherT=tasks.filter(t=>!taskActiveToday(t.days));
-  const doneCount=todayT.filter(t=>kid.completions[t.id]?.done).length;
-  const msgs=kid.messages.filter(m=>!m.read);
+const ChildToday = memo(function ChildToday({ kidId, kid, tasks, th, dispatch, mult }) {
+  const todayIdx = getTodayIdx();
+  const todayT = useMemo(
+    () => tasks.filter(t => taskActiveToday(t.days)),
+    [tasks]
+  );
+  const otherT = useMemo(
+    () => tasks.filter(t => !taskActiveToday(t.days)),
+    [tasks]
+  );
+  const doneCount = useMemo(
+    () => todayT.filter(t => {
+      const c = kid.completions[t.id];
+      return c?.done && isToday(c.date);
+    }).length,
+    [todayT, kid.completions]
+  );
+  const msgs = kid.messages.filter(m => !m.read);
 
   return (
     <>
@@ -938,7 +780,7 @@ function ChildToday({ kidId, kid, tasks, th, dispatch, mult }) {
         <TaskCard key={task.id} task={task} comp={kid.completions[task.id]} kidId={kidId} th={th} dispatch={dispatch} idx={i} mult={mult}/>
       ))}
 
-      {otherT.length>0&&(
+      {otherT.length>0 && (
         <>
           <div style={{margin:"10px 0 8px",color:"#bbb",fontWeight:800,fontSize:11,letterSpacing:.5}}>🗓 OTROS DÍAS</div>
           {otherT.map(task=>(
@@ -954,10 +796,12 @@ function ChildToday({ kidId, kid, tasks, th, dispatch, mult }) {
       )}
     </>
   );
-}
+});
 
 function TaskCard({ task, comp, kidId, th, dispatch, idx, mult }) {
-  const done=comp?.done, approved=comp?.approved;
+  const isTodayComp = comp && isToday(comp.date);
+  const done=isTodayComp && comp?.done;
+  const approved=isTodayComp && comp?.approved;
   const effStars=mult>1&&!done?Math.ceil(task.stars*mult):task.stars;
   const isSpecial=task.isSpecial;
   return (
@@ -1009,6 +853,9 @@ function ChildLogros({ kid, kidId, as, th }) {
   const nextLv=getNextLevel(as);
   const euros=Math.floor(as/STARS_PER_EURO);
   const streak=kid.stats.streak||0;
+   const hygieneStreak=kid.stats.hygieneStreak||0;
+   const musicDays=kid.stats.musicDays||0;
+   const wishes=kid.stats.wishApproved||0;
 
   return (
     <>
@@ -1042,6 +889,8 @@ function ChildLogros({ kid, kidId, as, th }) {
           {icon:"💶",label:"Euros ganados",value:`${euros}€`},
           {icon:"✅",label:"Tareas totales",value:kid.stats.totalDone||0},
           {icon:"🏅",label:"Logros",value:kid.achievements.length},
+          {icon:"🦷",label:"Racha de higiene",value:`${hygieneStreak} días`},
+          {icon:"🎵",label:"Días de música",value:musicDays},
         ].map((s,i)=>(
           <div key={i} className="card" style={{textAlign:"center",padding:12,border:`2px solid ${th.p}33`}}>
             <div style={{fontSize:28}}>{s.icon}</div>
@@ -1051,7 +900,10 @@ function ChildLogros({ kid, kidId, as, th }) {
         ))}
       </div>
 
-      <h3 style={{fontWeight:900,margin:"4px 0 12px",color:"#333"}}>🏅 Medallas</h3>
+      <h3 style={{fontWeight:900,margin:"4px 0 4px",color:"#333"}}>🏅 Medallas</h3>
+      <p style={{fontSize:11,color:"#777",margin:"0 0 10px"}}>
+        Completa tareas, mantén tus rachas y cumple deseos para ir desbloqueando nuevas medallas y estrellas bonus.
+      </p>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         {ACHIEV.map(a=>{
           const unlocked=kid.achievements.includes(a.id);
@@ -1071,7 +923,7 @@ function ChildLogros({ kid, kidId, as, th }) {
 }
 
 // ─── CHILD TIENDA ───────────────────────────────────────────────
-function ChildTienda({ kidId, kid, tasks, th, dispatch, avail }) {
+const ChildTienda = memo(function ChildTienda({ kidId, kid, tasks, th, dispatch, avail }) {
   const [activeTab,setActiveTab]=useState("privilegios");
 
   return (
@@ -1085,9 +937,15 @@ function ChildTienda({ kidId, kid, tasks, th, dispatch, avail }) {
         ))}
       </div>
 
-      <div style={{background:`${th.p}15`,border:`2px solid ${th.p}55`,borderRadius:16,padding:"10px 16px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <span style={{fontWeight:700,fontSize:13,color:th.a}}>⭐ Disponibles para canjear</span>
-        <span style={{fontWeight:900,fontSize:22,color:th.a}}>{avail}</span>
+      <div style={{background:`${th.p}15`,border:`2px solid ${th.p}55`,borderRadius:16,padding:"10px 16px",marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+          <span style={{fontWeight:700,fontSize:13,color:th.a}}>⭐ Estrellas disponibles para canjear</span>
+          <span style={{fontWeight:900,fontSize:22,color:th.a}}>{avail}</span>
+        </div>
+        <div style={{fontSize:11,color:"#555",fontWeight:600}}>
+          En <strong>Privilegios</strong> las estrellas se <strong>gastan</strong> para cosas como pantalla extra o elegir la cena.
+          En <strong>Deseos</strong> escribes metas grandes (por ejemplo “Estudiar las dispensaciones 📜”); papá/mamá las aprueban, pero no gastan estrellas.
+        </div>
       </div>
 
       {activeTab==="privilegios"&&(
@@ -1136,10 +994,10 @@ function ChildTienda({ kidId, kid, tasks, th, dispatch, avail }) {
       )}
     </>
   );
-}
+});
 
 // ─── CHILD MÁS ──────────────────────────────────────────────────
-function ChildMas({ kidId, kid, th, dispatch, challenges }) {
+const ChildMas = memo(function ChildMas({ kidId, kid, th, dispatch, challenges }) {
   const [subTab,setSubTab]=useState("gratitud");
   const myChallenges=challenges.filter(c=>c.kid1===kidId||c.kid2===kidId);
 
@@ -1202,7 +1060,7 @@ function ChildMas({ kidId, kid, th, dispatch, challenges }) {
       {subTab==="semana"&&<KidWeekCalendar kid={kid} tasks={[]} th={th}/>}
     </>
   );
-}
+});
 
 function KidWeekCalendar({ kid, th }) {
   const todayIdx=getTodayIdx();
@@ -1243,11 +1101,11 @@ function KidWeekCalendar({ kid, th }) {
 // ═══════════════════════════════════════════════════════════════════════
 // MONEY PANEL — shared kid/parent
 // ═══════════════════════════════════════════════════════════════════════
-function MoneyPanel({ kidId, kid, tasks, th, isParent, dispatch }) {
-  const as=approvedStars(kid,tasks);
-  const te=Math.floor(as/STARS_PER_EURO);
-  const paid=paidOut(kid);
-  const bal=te-paid;
+const MoneyPanel = memo(function MoneyPanel({ kidId, kid, tasks, th, isParent, dispatch }) {
+  const as = useMemo(() => approvedStars(kid, tasks), [kid, tasks]);
+  const te = Math.floor(as/STARS_PER_EURO);
+  const paid = paidOut(kid);
+  const bal = te - paid;
   const kname=kid.name||(kidId==="jose"?"José":"David");
 
   return (
@@ -1283,15 +1141,30 @@ function MoneyPanel({ kidId, kid, tasks, th, isParent, dispatch }) {
       )}
 
       <div className="card">
-        <h4 style={{fontWeight:900,marginBottom:10}}>Historial de pagos</h4>
-        {kid.payments.length===0
-          ?<div style={{textAlign:"center",color:"#ccc",padding:"20px 0",fontWeight:700}}>Sin pagos registrados</div>
-          :kid.payments.map((p,i)=>(
-            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<kid.payments.length-1?"1px solid #f5f5f5":"none"}}>
-              <div><div style={{fontWeight:800,fontSize:14}}>💶 {p.amount}€ entregado</div><div style={{fontSize:12,color:"#888",fontWeight:600}}>{p.date}{p.note?` · ${p.note}`:""}</div></div>
-              <div style={{fontWeight:900,color:"#4A7A1E",fontSize:18}}>✅</div>
-            </div>
-          ))}
+        <h4 style={{fontWeight:900,marginBottom:10}}>Historial detallado</h4>
+        {kid.payments.length===0 && st.approvalLog.filter(l=>l.kidId===kidId).length===0
+          ?<div style={{textAlign:"center",color:"#ccc",padding:"20px 0",fontWeight:700}}>Sin movimientos aún</div>
+          :(
+            <>
+              {st.approvalLog.filter(l=>l.kidId===kidId).slice(0,10).map(l=>(
+                <div key={l.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f5f5f5"}}>
+                  <div>
+                    <div style={{fontWeight:800,fontSize:13}}>{l.approved?"✅":"❌"} {l.taskName}</div>
+                    <div style={{fontSize:11,color:"#888",fontWeight:600}}>{l.date} · {l.approved ? `+${l.stars||1}⭐` : "Rechazada"}</div>
+                  </div>
+                </div>
+              ))}
+              {kid.payments.map((p,i)=>(
+                <div key={`pay-${i}`} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f5f5f5"}}>
+                  <div>
+                    <div style={{fontWeight:800,fontSize:13}}>💶 {p.amount}€ entregado</div>
+                    <div style={{fontSize:11,color:"#888",fontWeight:600}}>{p.date}{p.note?` · ${p.note}`:""}</div>
+                  </div>
+                  <div style={{fontWeight:900,color:"#4A7A1E",fontSize:16}}>✅</div>
+                </div>
+              ))}
+            </>
+          )}
       </div>
 
       <div className="card" style={{background:"#FFF3CC",border:"2px solid #FFD966"}}>
@@ -1302,7 +1175,7 @@ function MoneyPanel({ kidId, kid, tasks, th, isParent, dispatch }) {
       </div>
     </>
   );
-}
+});
 
 // ═══════════════════════════════════════════════════════════════════════
 // PARENT SCREEN
@@ -1387,7 +1260,7 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData 
 }
 
 // ─── PARENT NOTIFS ──────────────────────────────────────────────
-function ParentNotifs({ st, dispatch, parentRole }) {
+const ParentNotifs = memo(function ParentNotifs({ st, dispatch, parentRole }) {
   if(st.notifications.length===0)
     return <div style={{textAlign:"center",padding:"60px 0",color:"#ccc"}}><div style={{fontSize:60}}>🔔</div><div style={{fontWeight:700,marginTop:8}}>Sin notificaciones</div></div>;
 
@@ -1453,7 +1326,7 @@ function ParentNotifs({ st, dispatch, parentRole }) {
       ))}
     </>
   );
-}
+});
 
 // ─── PARENT MENSAJES Y GRATITUD ─────────────────────────────────
 function ParentMensajesYGratitud({ st, dispatch }) {
@@ -2221,6 +2094,13 @@ export default function App() {
     if (!authUser || !roleData) return;
     const unsub = subscribeAppState((data) => {
       let merged = { ...data };
+      if (Array.isArray(merged.tasks) && merged.tasks.length>0) {
+        const existingIds = new Set(merged.tasks.map(t=>t.id));
+        const extra = INIT_TASKS.filter(t=>!existingIds.has(t.id));
+        if (extra.length>0) merged.tasks = [...merged.tasks, ...extra];
+      } else {
+        merged.tasks = INIT_TASKS;
+      }
       if (data.parent && !data.parents) {
         merged.parents = { father: { ...data.parent, name: data.parent.name||"Papá" }, mother: { ...data.parent, name: data.parent.name||"Mamá" } };
         delete merged.parent;
