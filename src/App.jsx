@@ -1,27 +1,13 @@
-// src/App.jsx
-import React, { useEffect } from 'react';
-import { useDispatch } from 'react-redux';
-import { resetDailyTasks } from './store/tasksSlice'; // Adjust this import according to your project structure
+// Previous version of src/App.jsx as of commit 04f41515ae1e1918f8fd8354d2b25a113ab090ab
 
-const App = () => {
-  const dispatch = useDispatch();
+import React from 'react';
 
-  useEffect(() => {
-    const currentDate = new Date().toISOString().split('T')[0]; // Get YYYY-MM-DD
-
-    const lastResetDate = localStorage.getItem('lastResetDate');
-
-    if (lastResetDate !== currentDate) {
-      dispatch(resetDailyTasks());
-      localStorage.setItem('lastResetDate', currentDate);
-    }
-  }, [dispatch]);
-
-  return (
-    <div>
-      {/* Your component code */}
-    </div>
-  );
-};
+function App() {
+    return (
+        <div>
+            <h1>Welcome to Kids Goals!</h1>
+        </div>
+    );
+}
 
 export default App;
