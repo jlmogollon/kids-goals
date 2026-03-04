@@ -130,6 +130,11 @@ export function mkKid(name, dob) {
     bonusStars: 0,
     spentStars: 0,     // stars spent on privileges
     stats: { totalDone:0, streak:0, musicDays:0, hygieneStreak:0, taskStreaks:{}, allToday:false, wishApproved:0, approvedStars:0 },
+    profile: {
+      grade: "",           // Nivel de estudios (ej: "2º ESO")
+      strengths: "",       // Fortalezas (texto libre)
+      focusAreas: "",      // Ámbitos a reforzar
+    },
     payments: [],      // { id, amount, note, date }
     wishlist: [],      // { id, name, cost, emoji, approved, denied }
     privileges: [],    // { id, item, date }

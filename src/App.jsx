@@ -107,7 +107,26 @@ function reducer(st, a) {
 
     case "SET_KID_PHOTO": return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], photo:a.photo } } };
     case "SET_PARENT_PHOTO": return { ...st, parents:{ ...st.parents, [a.parentRole]:{ ...st.parents[a.parentRole], photo:a.photo } } };
-    case "SET_KID_INFO": return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], name:a.name, dob:a.dob } } };
+    case "SET_KID_INFO": {
+      const kid = st.kids[a.kidId];
+      return {
+        ...st,
+        kids:{
+          ...st.kids,
+          [a.kidId]:{
+            ...kid,
+            name:a.name,
+            dob:a.dob,
+            profile:{
+              ...(kid.profile||{}),
+              grade:a.grade ?? (kid.profile?.grade||""),
+              strengths:a.strengths ?? (kid.profile?.strengths||""),
+              focusAreas:a.focusAreas ?? (kid.profile?.focusAreas||""),
+            },
+          },
+        },
+      };
+    }
     case "SET_PARENT_NAME": return { ...st, parents:{ ...st.parents, [a.parentRole]:{ ...st.parents[a.parentRole], name:a.name } } };
     case "SET_PARENT_FCM_TOKEN": return { ...st, parentFcmTokens:{ ...st.parentFcmTokens, [a.parentRole]:a.token } };
 
@@ -1783,9 +1802,16 @@ function ParentHistory({ st }) {
 function KidEditor({ id, kid, dispatch }) {
   const [name,setName]=useState(kid.name||(id==="jose"?"José":"David"));
   const [dob,setDob]=useState(kid.dob||"");
+  const [grade,setGrade]=useState(kid.profile?.grade||"");
+  const [strengths,setStrengths]=useState(kid.profile?.strengths||"");
+  const [focusAreas,setFocusAreas]=useState(kid.profile?.focusAreas||"");
   const [edit,setEdit]=useState(false);
   const th=TH[id]; const age=calcAge(dob);
-  function save() { dispatch({type:"SET_KID_INFO",kidId:id,name,dob}); setEdit(false); dispatch({type:"TOAST",msg:`✅ Perfil de ${name} guardado`}); }
+  function save() {
+    dispatch({type:"SET_KID_INFO",kidId:id,name,dob,grade,strengths,focusAreas});
+    setEdit(false);
+    dispatch({type:"TOAST",msg:`✅ Perfil de ${name} guardado`});
+  }
   return (
     <div style={{padding:"12px 0",borderBottom:"1px solid #f0f0f0"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -1796,11 +1822,24 @@ function KidEditor({ id, kid, dispatch }) {
             <>
               <div style={{fontWeight:900,fontSize:16}}>{kid.name||(id==="jose"?"José":"David")}</div>
               <div style={{fontSize:12,color:"#888",fontWeight:600}}>{dob?`🎂 ${age} años · ${fmt(dob)}`:"Sin fecha de nacimiento"}</div>
+              {(kid.profile?.grade||grade) && <div style={{fontSize:12,color:"#666",fontWeight:600,marginTop:2}}>🎓 {(kid.profile?.grade||grade)}</div>}
+              {(kid.profile?.strengths||kid.profile?.focusAreas) && (
+                <div style={{fontSize:11,color:"#777",marginTop:2}}>
+                  {kid.profile?.strengths && <><strong>Fortalezas:</strong> {kid.profile.strengths}<br/></>}
+                  {kid.profile?.focusAreas && <><strong>A reforzar:</strong> {kid.profile.focusAreas}</>}
+                </div>
+              )}
             </>
           ):(
             <>
               <input value={name} onChange={e=>setName(e.target.value)} style={{width:"100%",padding:"6px 10px",borderRadius:10,border:`2px solid ${th.p}`,fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:14,marginBottom:5}}/>
               <input type="date" value={dob} onChange={e=>setDob(e.target.value)} style={{width:"100%",padding:"6px 10px",borderRadius:10,border:`2px solid ${th.p}`,fontFamily:"'Nunito',sans-serif",fontSize:13}}/>
+              <input value={grade} onChange={e=>setGrade(e.target.value)} placeholder="Curso / nivel (ej: 2º ESO)"
+                style={{width:"100%",marginTop:6,padding:"6px 10px",borderRadius:10,border:`2px solid ${th.p}55`,fontFamily:"'Nunito',sans-serif",fontSize:13}}/>
+              <input value={strengths} onChange={e=>setStrengths(e.target.value)} placeholder="Fortalezas (ej: mates, música...)"
+                style={{width:"100%",marginTop:6,padding:"6px 10px",borderRadius:10,border:`2px solid ${th.p}33`,fontFamily:"'Nunito',sans-serif",fontSize:13}}/>
+              <input value={focusAreas} onChange={e=>setFocusAreas(e.target.value)} placeholder="Ámbitos a reforzar"
+                style={{width:"100%",marginTop:6,padding:"6px 10px",borderRadius:10,border:`2px solid ${th.p}33`,fontFamily:"'Nunito',sans-serif",fontSize:13}}/>
             </>
           )}
         </div>
