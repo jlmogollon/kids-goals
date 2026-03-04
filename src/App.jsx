@@ -548,8 +548,8 @@ function AuthScreen({ onLogin }) {
         </button>
         {error && <p style={{color:PALETTE.error,fontSize:13,textAlign:"center",fontWeight:700}}>{error}</p>}
         <p style={{color:"#aaa",fontSize:11,textAlign:"center",lineHeight:1.6}}>
-          Cada miembro de la familia entra con su cuenta Google.<br/>
-          Los menores pueden usar Google Family Link.
+          Cada miembro de la familia entra con su propia cuenta Google (padres e hijos).<br/>
+          Si quieres cambiar de usuario, cierra sesión desde Configuración y vuelve a iniciar sesión con la cuenta del niño.
         </p>
       </div>
     </div>
@@ -811,6 +811,15 @@ function TaskCard({ task, comp, kidId, th, dispatch, idx, mult }) {
             <span style={{background:"#f0f0f0",borderRadius:50,padding:"1px 7px",fontSize:9,fontWeight:700,color:"#777"}}>🕐{task.time}</span>
             {task.deadline&&<span style={{background:"#FFE4E4",borderRadius:50,padding:"1px 7px",fontSize:9,fontWeight:700,color:PALETTE.error}}>📅{task.deadline}</span>}
           </div>
+          {task.id===18&&(
+            <button
+              type="button"
+              onClick={()=>{ if(typeof window!=="undefined"){ window.open("https://gamma.app/docs/ESTUDIO-DE-LAS-DISPENSACIONES-j0n2ufu1l7v2m8b","_blank","noopener,noreferrer"); } }}
+              style={{marginTop:6,background:"#F0FAE6",border:`1px solid ${th.p}66`,borderRadius:12,padding:"4px 10px",fontSize:11,fontWeight:800,color:th.a,cursor:"pointer"}}
+            >
+              📜 Abrir estudio de las dispensaciones
+            </button>
+          )}
         </div>
         <div style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:44,flexShrink:0}}>
           <StarBadge n={effStars}/>
@@ -937,7 +946,7 @@ const ChildTienda = memo(function ChildTienda({ kidId, kid, tasks, th, dispatch,
         </div>
         <div style={{fontSize:11,color:"#555",fontWeight:600}}>
           En <strong>Privilegios</strong> las estrellas se <strong>gastan</strong> para cosas como pantalla extra o elegir la cena.
-          En <strong>Deseos</strong> escribes metas grandes (por ejemplo “Estudiar las dispensaciones 📜”); papá/mamá las aprueban, pero no gastan estrellas.
+          En <strong>Deseos</strong> escribes metas grandes (por ejemplo un libro, una excursión o un curso); papá/mamá las aprueban, pero no gastan estrellas.
         </div>
       </div>
 
