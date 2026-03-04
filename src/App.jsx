@@ -19,6 +19,8 @@ const db = getFirestore(_app);
 // Clave VAPID para notificaciones push (Firebase Console > Cloud Messaging > Web Push certificates)
 const FCM_VAPID_KEY = import.meta.env.VITE_FCM_VAPID_KEY || "";
 const _provider = new GoogleAuthProvider();
+// Forzar que Google muestre el selector de cuenta siempre que se inicie sesión
+_provider.setCustomParameters({ prompt: "select_account" });
 
 // Registrar el Service Worker de FCM al cargar para que las notificaciones en segundo plano lleguen
 async function registerFcmSw() {
