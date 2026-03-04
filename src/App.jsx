@@ -1664,7 +1664,7 @@ function ParentConfig({ st, dispatch, parentRole, currentParent }) {
       <div className="card" style={{background:"#FFF0F0",border:"2px solid #FFD0D0",textAlign:"center"}}>
         <button onClick={()=>logoutFirebase()}
           style={{width:"100%",background:"none",border:"none",color:PALETTE.error,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,cursor:"pointer",padding:"8px 4px",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-          🚪 Cerrar sesión de Google
+          🚪 Cerrar sesión / cambiar de usuario
         </button>
       </div>
     </>
@@ -2019,7 +2019,8 @@ export default function App() {
     if (!authUser || !parentRoleForSave || !currentParentForSave?.photo) return;
     if (currentParentForSave.photo === lastParentPhoto.current) return;
     lastParentPhoto.current = currentParentForSave.photo;
-    saveParentPhoto(parentRoleForSave, currentParentForSave).then(()=>dispatch({type:"TOAST",msg:"✅ Foto guardada"})).catch(console.error);
+    // Sin toast en cada arranque: solo sincronizamos silenciosamente
+    saveParentPhoto(parentRoleForSave, currentParentForSave).catch(console.error);
   }, [currentParentForSave?.photo, authUser, parentRoleForSave]);
 
   // Firebase auth listener
