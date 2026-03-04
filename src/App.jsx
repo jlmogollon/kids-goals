@@ -26,7 +26,8 @@ _provider.setCustomParameters({ prompt: "select_account" });
 async function registerFcmSw() {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator) || !FCM_VAPID_KEY) return null;
   try {
-    const reg = await navigator.serviceWorker.register("/firebase-messaging-sw.js", { scope: "/" });
+    const swUrl = `${import.meta.env.BASE_URL || "/"}firebase-messaging-sw.js`;
+    const reg = await navigator.serviceWorker.register(swUrl, { scope: import.meta.env.BASE_URL || "/" });
     return reg;
   } catch (e) {
     console.warn("FCM SW registration:", e?.message || e);
