@@ -116,8 +116,17 @@ function reducer(st, a) {
       const task = st.tasks.find(t=>t.id===taskId);
       const mult = getStreakMult(st.kids[kidId].stats.streak||0);
       const comp = { done:true, approved:false, evidence:null, photoUrl:null, date:new Date().toISOString(), mult };
-      const newKid = { ...st.kids[kidId], completions:{ ...st.kids[kidId].completions, [taskId]:comp },
-        stats:{ ...st.kids[kidId].stats, totalDone:(st.kids[kidId].stats.totalDone||0)+1 } };
+      const dateKey = new Date().toISOString().slice(0,10);
+      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+      const kidPrev = st.kids[kidId];
+      const dayLog = kidPrev.activityLog?.[dateKey] || [];
+      const entry = { id:Date.now(), type:"taskDone", taskId, taskName:task?.name, time };
+      const newKid = {
+        ...kidPrev,
+        completions:{ ...kidPrev.completions, [taskId]:comp },
+        stats:{ ...kidPrev.stats, totalDone:(kidPrev.stats.totalDone||0)+1 },
+        activityLog:{ ...(kidPrev.activityLog||{}), [dateKey]:[entry,...dayLog] },
+      };
       const notif = { id:Date.now(), kidId, taskId, time:new Date().toLocaleTimeString("es-ES"), read:false, type:"task" };
       return { ...st, kids:{ ...st.kids, [kidId]:newKid }, notifications:[notif,...st.notifications],
         toast:`✅ ${task?.name} enviada para aprobación` };
@@ -135,7 +144,8 @@ function reducer(st, a) {
       const task = st.tasks.find(t=>t.id===taskId);
       const comp = { ...st.kids[kidId].completions[taskId], approved:true, evidence:null, photoUrl:null, approvedBy: approvedBy||"parent" };
       const effStars = Math.ceil((task?.stars||0) * (comp.mult && comp.mult>1 ? comp.mult : 1));
-      let kid = { ...st.kids[kidId], completions:{ ...st.kids[kidId].completions, [taskId]:comp } };
+      const kidPrev = st.kids[kidId];
+      let kid = { ...kidPrev, completions:{ ...kidPrev.completions, [taskId]:comp } };
       // Add encouragement message if provided
       if(message) kid = { ...kid, messages:[{ id:Date.now(), from:"parent", text:message, date:new Date().toLocaleTimeString("es-ES"), read:false },...kid.messages] };
       // Check achievements
@@ -146,6 +156,11 @@ function reducer(st, a) {
         kid={ ...kid, achievements:[...kid.achievements,...newAch.map(a=>a.id)], bonusStars:kid.bonusStars+bonusAdded };
         achToast=` 🏅 ¡${newAch[0].label}! +${bonusAdded}⭐`;
       }
+      const dateKey = new Date().toISOString().slice(0,10);
+      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+      const dayLog = kid.activityLog?.[dateKey] || [];
+      const entry = { id:Date.now(), type:"taskApproved", taskId, taskName:task?.name, stars:effStars, time };
+      kid = { ...kid, activityLog:{ ...(kid.activityLog||{}), [dateKey]:[entry,...dayLog] } };
       const newNotifs=st.notifications.map(n=>n.id===notifId?{...n,read:true}:n);
       const logEntry={ id:Date.now(), kidId, taskId, taskName:task?.name, stars:effStars, date:new Date().toLocaleDateString("es-ES"), approved:true, approvedBy: approvedBy||"parent" };
       return { ...st, kids:{ ...st.kids, [kidId]:kid }, notifications:newNotifs, confetti:true,
@@ -176,23 +191,65 @@ function reducer(st, a) {
 
     case "ADD_PAYMENT": {
       const p={ id:Date.now(), amount:a.amount, note:a.note, date:new Date().toLocaleDateString("es-ES") };
-      return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], payments:[...st.kids[a.kidId].payments,p] } },
+      const dateKey = new Date().toISOString().slice(0,10);
+      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+      const kidPrev = st.kids[a.kidId];
+      const dayLog = kidPrev.activityLog?.[dateKey] || [];
+      const entry = { id:Date.now(), type:"payment", amount:a.amount, note:a.note, time };
+      const kid = {
+        ...kidPrev,
+        payments:[...kidPrev.payments,p],
+        activityLog:{ ...(kidPrev.activityLog||{}), [dateKey]:[entry,...dayLog] },
+      };
+      return { ...st, kids:{ ...st.kids, [a.kidId]:kid },
         modal:null, toast:`💶 Entregado ${a.amount}€ a ${kidName(st.kids[a.kidId],a.kidId)}` };
     }
 
     case "ADD_WISH": {
       const w={ id:Date.now(), name:a.name, cost:a.cost, emoji:a.emoji, approved:false, denied:false };
-      return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], wishlist:[...st.kids[a.kidId].wishlist,w] } },
+      const dateKey = new Date().toISOString().slice(0,10);
+      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+      const kidPrev = st.kids[a.kidId];
+      const dayLog = kidPrev.activityLog?.[dateKey] || [];
+      const entry = { id:Date.now(), type:"wishAdded", name:a.name, cost:a.cost, time };
+      const kid = {
+        ...kidPrev,
+        wishlist:[...kidPrev.wishlist,w],
+        activityLog:{ ...(kidPrev.activityLog||{}), [dateKey]:[entry,...dayLog] },
+      };
+      return { ...st, kids:{ ...st.kids, [a.kidId]:kid },
         modal:null, toast:"🌠 Deseo añadido a tu lista" };
     }
     case "APPROVE_WISH": {
       const wl=st.kids[a.kidId].wishlist.map(w=>w.id===a.wishId?{...w,approved:true}:w);
-      const kid={ ...st.kids[a.kidId], wishlist:wl, stats:{ ...st.kids[a.kidId].stats, wishApproved:(st.kids[a.kidId].stats.wishApproved||0)+1 } };
+      const dateKey = new Date().toISOString().slice(0,10);
+      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+      const kidPrev = st.kids[a.kidId];
+      const wish = kidPrev.wishlist.find(w=>w.id===a.wishId);
+      const dayLog = kidPrev.activityLog?.[dateKey] || [];
+      const entry = { id:Date.now(), type:"wishApproved", name:wish?.name, cost:wish?.cost, time };
+      const kid={
+        ...kidPrev,
+        wishlist:wl,
+        stats:{ ...kidPrev.stats, wishApproved:(kidPrev.stats.wishApproved||0)+1 },
+        activityLog:{ ...(kidPrev.activityLog||{}), [dateKey]:[entry,...dayLog] },
+      };
       return { ...st, kids:{ ...st.kids, [a.kidId]:kid }, modal:null, toast:"✅ ¡Deseo aprobado!" };
     }
     case "DENY_WISH": {
       const wl=st.kids[a.kidId].wishlist.map(w=>w.id===a.wishId?{...w,denied:true}:w);
-      return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], wishlist:wl } }, modal:null, toast:"❌ Deseo denegado" };
+      const dateKey = new Date().toISOString().slice(0,10);
+      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+      const kidPrev = st.kids[a.kidId];
+      const wish = kidPrev.wishlist.find(w=>w.id===a.wishId);
+      const dayLog = kidPrev.activityLog?.[dateKey] || [];
+      const entry = { id:Date.now(), type:"wishDenied", name:wish?.name, cost:wish?.cost, time };
+      const kid={
+        ...kidPrev,
+        wishlist:wl,
+        activityLog:{ ...(kidPrev.activityLog||{}), [dateKey]:[entry,...dayLog] },
+      };
+      return { ...st, kids:{ ...st.kids, [a.kidId]:kid }, modal:null, toast:"❌ Deseo denegado" };
     }
 
     case "REDEEM_PRIVILEGE": {
@@ -200,8 +257,16 @@ function reducer(st, a) {
       if(!priv) return st;
       const kid=st.kids[a.kidId];
       if(availableStars(kid,st.tasks)<priv.cost) return { ...st, toast:"⭐ No tienes suficientes estrellas" };
-      const newKid={ ...kid, spentStars:kid.spentStars+priv.cost,
-        privileges:[...kid.privileges,{id:Date.now(),item:priv,date:new Date().toLocaleDateString("es-ES")}] };
+      const dateKey = new Date().toISOString().slice(0,10);
+      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+      const dayLog = kid.activityLog?.[dateKey] || [];
+      const entry = { id:Date.now(), type:"privilege", name:priv.name, cost:priv.cost, time };
+      const newKid={
+        ...kid,
+        spentStars:kid.spentStars+priv.cost,
+        privileges:[...kid.privileges,{id:Date.now(),item:priv,date:new Date().toLocaleDateString("es-ES")}],
+        activityLog:{ ...(kid.activityLog||{}), [dateKey]:[entry,...dayLog] },
+      };
       const notif={ id:Date.now(), kidId:a.kidId, type:"privilege", privName:priv.name, time:new Date().toLocaleTimeString("es-ES"), read:false };
       return { ...st, kids:{ ...st.kids, [a.kidId]:newKid }, notifications:[notif,...st.notifications],
         modal:null, confetti:true, toast:`🎉 ¡Canjeado: ${priv.name}!` };
@@ -209,13 +274,33 @@ function reducer(st, a) {
 
     case "ADD_GRATITUDE": {
       const g={ id:Date.now(), date:new Date().toLocaleDateString("es-ES"), text:a.text };
-      return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], gratitude:[g,...st.kids[a.kidId].gratitude] } },
+      const dateKey = new Date().toISOString().slice(0,10);
+      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+      const kidPrev = st.kids[a.kidId];
+      const dayLog = kidPrev.activityLog?.[dateKey] || [];
+      const entry = { id:Date.now(), type:"gratitude", text:a.text, time };
+      const kid = {
+        ...kidPrev,
+        gratitude:[g,...kidPrev.gratitude],
+        activityLog:{ ...(kidPrev.activityLog||{}), [dateKey]:[entry,...dayLog] },
+      };
+      return { ...st, kids:{ ...st.kids, [a.kidId]:kid },
         modal:null, toast:"📝 Gratitud guardada ❤️" };
     }
 
     case "SEND_MESSAGE": {
       const msg={ id:Date.now(), from:"parent", text:a.text, date:new Date().toLocaleTimeString("es-ES"), read:false };
-      return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], messages:[msg,...st.kids[a.kidId].messages] } },
+      const dateKey = new Date().toISOString().slice(0,10);
+      const time = msg.date;
+      const kidPrev = st.kids[a.kidId];
+      const dayLog = kidPrev.activityLog?.[dateKey] || [];
+      const entry = { id:Date.now(), type:"message", text:a.text, time };
+      const kid = {
+        ...kidPrev,
+        messages:[msg,...kidPrev.messages],
+        activityLog:{ ...(kidPrev.activityLog||{}), [dateKey]:[entry,...dayLog] },
+      };
+      return { ...st, kids:{ ...st.kids, [a.kidId]:kid },
         modal:null, toast:`💬 Mensaje enviado a ${kidName(st.kids[a.kidId],a.kidId)}` };
     }
     case "READ_MESSAGES": {
@@ -1009,7 +1094,7 @@ const ChildMas = memo(function ChildMas({ kidId, kid, th, dispatch, challenges }
   return (
     <>
       <div style={{display:"flex",gap:8,marginBottom:12,overflowX:"auto"}}>
-        {[{id:"gratitud",label:"📝 Gratitud"},{id:"retos",label:"⚔️ Retos"},{id:"semana",label:"📅 Semana"}].map(t=>(
+        {[{id:"gratitud",label:"📝 Gratitud"},{id:"retos",label:"⚔️ Retos"},{id:"historial",label:"📆 Historial"}].map(t=>(
           <button key={t.id} onClick={()=>setSubTab(t.id)}
             style={{whiteSpace:"nowrap",borderRadius:50,padding:"8px 14px",border:"none",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:12,background:subTab===t.id?th.p:"#f0f0f0",color:subTab===t.id?"#fff":"#888",transition:"all .2s"}}>
             {t.label}
@@ -1062,43 +1147,60 @@ const ChildMas = memo(function ChildMas({ kidId, kid, th, dispatch, challenges }
         </>
       )}
 
-      {subTab==="semana"&&<KidWeekCalendar kid={kid} tasks={[]} th={th}/>}
+      {subTab==="historial"&&<KidHistory kid={kid} th={th}/>}
     </>
   );
 });
 
-function KidWeekCalendar({ kid, th }) {
-  const todayIdx=getTodayIdx();
+function KidHistory({ kid, th }) {
+  const entriesByDate = Object.entries(kid.activityLog||{}).sort((a,b)=>b[0].localeCompare(a[0]));
   return (
     <div>
-      <div className="card">
-        <h3 style={{fontWeight:900,marginBottom:14}}>📅 Esta semana</h3>
-        <div style={{display:"flex",gap:6}}>
-          {DAY_SHORT.map((d,i)=>{
-            const isToday=i===todayIdx, isFuture=i>todayIdx;
-            const pct=isToday?0.5:isFuture?0:Math.random();
-            return (
-              <div key={i} style={{flex:1,textAlign:"center"}}>
-                <div style={{fontSize:10,fontWeight:800,color:isToday?th.p:"#aaa",marginBottom:4}}>{d}</div>
-                <div style={{position:"relative",height:70,background:"#f5f5f5",borderRadius:12,overflow:"hidden",border:isToday?`2.5px solid ${th.p}`:"2px solid transparent"}}>
-                  <div style={{position:"absolute",bottom:0,left:0,right:0,height:`${pct*100}%`,background:isFuture?"#e0e0e0":`linear-gradient(180deg,${th.p},${th.a})`,borderRadius:10,transition:"height .8s"}}/>
-                </div>
-                <div style={{fontSize:9,fontWeight:800,color:"#888",marginTop:3}}>{isFuture?"–":Math.round(pct*100)+"%"}</div>
-              </div>
-            );
-          })}
-        </div>
+      <div className="card" style={{marginBottom:12}}>
+        <h3 style={{fontWeight:900,marginBottom:6}}>📆 Historial de actividades</h3>
+        <p style={{fontSize:11,color:"#777",fontWeight:600,marginBottom:4}}>Mira lo que has hecho otros días.</p>
       </div>
-      <div className="card" style={{background:`linear-gradient(135deg,${th.l},#fff)`,border:`2px solid ${th.p}44`}}>
-        <div style={{display:"flex",alignItems:"center",gap:16}}>
-          <div style={{fontSize:48}}>🔥</div>
-          <div>
-            <div style={{fontSize:32,fontWeight:900,color:th.p}}>{kid.stats.streak||0}</div>
-            <div style={{fontWeight:800,color:"#333"}}>días seguidos</div>
-            <div style={{fontSize:12,color:"#888",fontWeight:600}}>¡Sigue así! 💪</div>
+      {entriesByDate.length===0
+        ?<div className="card" style={{textAlign:"center",padding:"32px 0",color:"#bbb"}}>
+            <div style={{fontSize:40}}>🕒</div>
+            <div style={{fontWeight:800,marginTop:6,fontSize:13}}>Todavía no hay historial</div>
+            <div style={{fontSize:11,marginTop:2}}>Cuando completes tareas, canjees estrellas o recibas mensajes, aparecerán aquí.</div>
           </div>
-        </div>
-      </div>
+        :entriesByDate.map(([date,items])=>(
+          <div key={date} className="card" style={{marginBottom:8}}>
+            <div style={{fontSize:12,fontWeight:900,color:th.a,marginBottom:4}}>📅 {date}</div>
+            {items.map(it=>(
+              <div key={it.id} style={{display:"flex",gap:6,alignItems:"flex-start",padding:"4px 0",fontSize:12,borderBottom:"1px solid #f5f5f5"}}>
+                <div style={{width:18,textAlign:"center"}}>
+                  {it.type==="taskDone"&&"⏳"}
+                  {it.type==="taskApproved"&&"✅"}
+                  {it.type==="privilege"&&"🛍️"}
+                  {it.type==="payment"&&"💶"}
+                  {it.type==="wishAdded"&&"🌠"}
+                  {it.type==="wishApproved"&&"🎁"}
+                  {it.type==="wishDenied"&&"❌"}
+                  {it.type==="gratitude"&&"📝"}
+                  {it.type==="message"&&"💬"}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,color:"#333"}}>
+                    {it.type==="taskDone"   && <>Tarea enviada: {it.taskName}</>}
+                    {it.type==="taskApproved"&& <>Tarea aprobada: {it.taskName} (+{it.stars}⭐)</>}
+                    {it.type==="privilege" && <>Canjeaste: {it.name} ({it.cost}⭐)</>}
+                    {it.type==="payment"   && <>Recibiste {it.amount}€ {it.note?`· ${it.note}`:""}</>}
+                    {it.type==="wishAdded" && <>Nuevo deseo: {it.name} ({it.cost}⭐)</>}
+                    {it.type==="wishApproved" && <>Deseo aprobado: {it.name}</>}
+                    {it.type==="wishDenied" && <>Deseo denegado: {it.name}</>}
+                    {it.type==="gratitude" && <>Gratitud guardada</>}
+                    {it.type==="message"   && <>Mensaje de papá/mamá</>}
+                  </div>
+                  <div style={{fontSize:11,color:"#999",fontWeight:600}}>{it.time}</div>
+                  {it.type==="gratitude" && <div style={{fontSize:11,color:"#555",marginTop:2}}>{it.text}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
     </div>
   );
 }
@@ -1197,6 +1299,7 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData 
     {id:"mensajes",icon:"💬",label:"Mensajes"},
     {id:"dinero",icon:"💶",label:"Dinero"},
     {id:"ranking",icon:"🏆",label:"Ranking"},
+    {id:"historial",icon:"📆",label:"Historial"},
     {id:"config",icon:"⚙️",label:"Config"},
   ];
 
@@ -1248,6 +1351,7 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData 
         {st.parentTab==="mensajes" && <ParentMensajesYGratitud st={st} dispatch={dispatch}/>}
         {st.parentTab==="dinero"   && <ParentDinero st={st} dispatch={dispatch}/>}
         {st.parentTab==="ranking"  && <ParentRanking st={st} dispatch={dispatch}/>}
+        {st.parentTab==="historial"&& <ParentHistory st={st}/>}
         {st.parentTab==="config"   && <ParentConfig st={st} dispatch={dispatch} parentRole={parentRole} currentParent={currentParent}/>}
       </div>
 
@@ -1582,6 +1686,25 @@ function ParentRanking({ st, dispatch }) {
           📄 Exportar informe PDF
         </button>
       </div>
+    </>
+  );
+}
+
+function ParentHistory({ st }) {
+  const [kidId,setKidId]=useState("jose");
+  const kid=st.kids[kidId];
+  const th=TH[kidId]||TH.jose;
+  return (
+    <>
+      <div style={{display:"flex",gap:8,margin:"12px 0"}}>
+        {["jose","david"].map(id=>(
+          <button key={id} onClick={()=>setKidId(id)}
+            style={{flex:1,borderRadius:14,padding:10,border:"none",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,background:kidId===id?TH[id].p:"#f0f0f0",color:kidId===id?"#fff":"#888",transition:"all .2s"}}>
+            {id==="jose"?"👦🏻 José":"👦 David"}
+          </button>
+        ))}
+      </div>
+      <KidHistory kid={kid} th={th}/>
     </>
   );
 }
