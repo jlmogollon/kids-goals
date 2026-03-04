@@ -55,9 +55,13 @@ export function fmt(d) {
 }
 
 export function isToday(dateStr) {
-  if (!dateStr) return true;
+  if (!dateStr) return false;
+  // Valores antiguos guardaban solo la hora local (ej: "10:23:00"),
+  // que el navegador interpreta siempre como "hoy". Para no arrastrar
+  // tareas de días anteriores, si no hay fecha (YYYY-MM-DD) devolvemos false.
+  if (typeof dateStr === "string" && !dateStr.includes("-")) return false;
   const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return true;
+  if (Number.isNaN(d.getTime())) return false;
   const t = new Date();
   return (
     d.getFullYear() === t.getFullYear() &&
