@@ -1159,8 +1159,18 @@ const ChildMas = memo(function ChildMas({ kidId, kid, th, dispatch, challenges }
   );
 });
 
-function KidHistory({ kid, th }) {
-  const entriesByDate = Object.entries(kid.activityLog||{}).sort((a,b)=>b[0].localeCompare(a[0]));
+function KidHistory({ kid, th, filter="all", month }) {
+  let entriesByDate = Object.entries(kid.activityLog||{});
+  if (month) entriesByDate = entriesByDate.filter(([date])=>date.startsWith(month));
+  entriesByDate = entriesByDate.sort((a,b)=>b[0].localeCompare(a[0]));
+  const matchesFilter = (it) => {
+    if (filter==="all") return true;
+    if (filter==="tasks")   return it.type==="taskDone"||it.type==="taskApproved";
+    if (filter==="wishes")  return it.type==="wishAdded"||it.type==="wishApproved"||it.type==="wishDenied";
+    if (filter==="money")   return it.type==="privilege"||it.type==="payment";
+    if (filter==="messages")return it.type==="message"||it.type==="gratitude";
+    return true;
+  };
   return (
     <div>
       <div className="card" style={{marginBottom:12}}>
@@ -1173,41 +1183,45 @@ function KidHistory({ kid, th }) {
             <div style={{fontWeight:800,marginTop:6,fontSize:13}}>Todavía no hay historial</div>
             <div style={{fontSize:11,marginTop:2}}>Cuando completes tareas, canjees estrellas o recibas mensajes, aparecerán aquí.</div>
           </div>
-        :entriesByDate.map(([date,items])=>(
-          <div key={date} className="card" style={{marginBottom:8}}>
-            <div style={{fontSize:12,fontWeight:900,color:th.a,marginBottom:4}}>📅 {date}</div>
-            {items.map(it=>(
-              <div key={it.id} style={{display:"flex",gap:6,alignItems:"flex-start",padding:"4px 0",fontSize:12,borderBottom:"1px solid #f5f5f5"}}>
-                <div style={{width:18,textAlign:"center"}}>
-                  {it.type==="taskDone"&&"⏳"}
-                  {it.type==="taskApproved"&&"✅"}
-                  {it.type==="privilege"&&"🛍️"}
-                  {it.type==="payment"&&"💶"}
-                  {it.type==="wishAdded"&&"🌠"}
-                  {it.type==="wishApproved"&&"🎁"}
-                  {it.type==="wishDenied"&&"❌"}
-                  {it.type==="gratitude"&&"📝"}
-                  {it.type==="message"&&"💬"}
-                </div>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:700,color:"#333"}}>
-                    {it.type==="taskDone"   && <>Tarea enviada: {it.taskName}</>}
-                    {it.type==="taskApproved"&& <>Tarea aprobada: {it.taskName} (+{it.stars}⭐)</>}
-                    {it.type==="privilege" && <>Canjeaste: {it.name} ({it.cost}⭐)</>}
-                    {it.type==="payment"   && <>Recibiste {it.amount}€ {it.note?`· ${it.note}`:""}</>}
-                    {it.type==="wishAdded" && <>Nuevo deseo: {it.name} ({it.cost}⭐)</>}
-                    {it.type==="wishApproved" && <>Deseo aprobado: {it.name}</>}
-                    {it.type==="wishDenied" && <>Deseo denegado: {it.name}</>}
-                    {it.type==="gratitude" && <>Gratitud guardada</>}
-                    {it.type==="message"   && <>Mensaje de papá/mamá</>}
+        :entriesByDate.map(([date,items])=>{
+          const visibleItems = items.filter(matchesFilter);
+          if (visibleItems.length===0) return null;
+          return (
+            <div key={date} className="card" style={{marginBottom:8}}>
+              <div style={{fontSize:12,fontWeight:900,color:th.a,marginBottom:4}}>📅 {date}</div>
+              {visibleItems.map(it=>(
+                <div key={it.id} style={{display:"flex",gap:6,alignItems:"flex-start",padding:"4px 0",fontSize:12,borderBottom:"1px solid #f5f5f5"}}>
+                  <div style={{width:18,textAlign:"center"}}>
+                    {it.type==="taskDone"&&"⏳"}
+                    {it.type==="taskApproved"&&"✅"}
+                    {it.type==="privilege"&&"🛍️"}
+                    {it.type==="payment"&&"💶"}
+                    {it.type==="wishAdded"&&"🌠"}
+                    {it.type==="wishApproved"&&"🎁"}
+                    {it.type==="wishDenied"&&"❌"}
+                    {it.type==="gratitude"&&"📝"}
+                    {it.type==="message"&&"💬"}
                   </div>
-                  <div style={{fontSize:11,color:"#999",fontWeight:600}}>{it.time}</div>
-                  {it.type==="gratitude" && <div style={{fontSize:11,color:"#555",marginTop:2}}>{it.text}</div>}
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:700,color:"#333"}}>
+                      {it.type==="taskDone"   && <>Tarea enviada: {it.taskName}</>}
+                      {it.type==="taskApproved"&& <>Tarea aprobada: {it.taskName} (+{it.stars}⭐)</>}
+                      {it.type==="privilege" && <>Canjeaste: {it.name} ({it.cost}⭐)</>}
+                      {it.type==="payment"   && <>Recibiste {it.amount}€ {it.note?`· ${it.note}`:""}</>}
+                      {it.type==="wishAdded" && <>Nuevo deseo: {it.name} ({it.cost}⭐)</>}
+                      {it.type==="wishApproved" && <>Deseo aprobado: {it.name}</>}
+                      {it.type==="wishDenied" && <>Deseo denegado: {it.name}</>}
+                      {it.type==="gratitude" && <>Gratitud guardada</>}
+                      {it.type==="message"   && <>Mensaje de papá/mamá</>}
+                    </div>
+                    <div style={{fontSize:11,color:"#999",fontWeight:600}}>{it.time}</div>
+                    {it.type==="gratitude" && <div style={{fontSize:11,color:"#555",marginTop:2}}>{it.text}</div>}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        ))}
+              ))}
+            </div>
+          );
+        })}
     </div>
   );
 }
@@ -1382,6 +1396,12 @@ const ParentNotifs = memo(function ParentNotifs({ st, dispatch, parentRole }) {
 
   return (
     <>
+      <div className="card" style={{marginBottom:10,background:"#F0FAE6",border:"2px solid #8DC63F55"}}>
+        <div style={{fontWeight:900,fontSize:13,marginBottom:4}}>⏳ Tareas pendientes de revisar</div>
+        <p style={{fontSize:11,color:"#555",fontWeight:600,marginBottom:2}}>
+          Cuando tus hijos marquen tareas como hechas, aparecerán aquí para que las apruebes o rechaces.
+        </p>
+      </div>
       {/* Wish notifications from kids */}
       {["jose","david"].map(id=>st.kids[id].wishlist.filter(w=>!w.approved&&!w.denied).map(w=>(
         <div key={w.id} className="card" style={{border:"2px solid #FFB80088",background:"#FFFBEA",animation:"slideUp .3s both"}}>
@@ -1701,6 +1721,25 @@ function ParentHistory({ st }) {
   const [kidId,setKidId]=useState("jose");
   const kid=st.kids[kidId];
   const th=TH[kidId]||TH.jose;
+  const allActivity=kid.activityLog||{};
+  const months=Array.from(new Set(Object.keys(allActivity).map(d=>d.slice(0,7)))).sort((a,b)=>b.localeCompare(a));
+  const todayMonth=new Date().toISOString().slice(0,7);
+  const [month,setMonth]=useState(months[0]||todayMonth);
+  const [filter,setFilter]=useState("all");
+  const as=approvedStars(kid,st.tasks);
+  const lv=getLevel(as);
+  const nextLv=getNextLevel(as);
+  const monthEntries=Object.entries(allActivity).filter(([d])=>d.startsWith(month));
+  let monthTasks=0,monthApproved=0,monthPriv=0,monthPayment=0,monthWishes=0;
+  monthEntries.forEach(([,items])=>{
+    items.forEach(it=>{
+      if(it.type==="taskDone") monthTasks++;
+      if(it.type==="taskApproved") monthApproved++;
+      if(it.type==="privilege") monthPriv++;
+      if(it.type==="payment") monthPayment+=it.amount||0;
+      if(it.type==="wishApproved") monthWishes++;
+    });
+  });
   return (
     <>
       <div style={{display:"flex",gap:8,margin:"12px 0"}}>
@@ -1711,7 +1750,31 @@ function ParentHistory({ st }) {
           </button>
         ))}
       </div>
-      <KidHistory kid={kid} th={th}/>
+      <div className="card" style={{marginBottom:10}}>
+        <h3 style={{fontWeight:900,marginBottom:6}}>📊 Resumen de progreso</h3>
+        <div style={{fontSize:13,color:"#555",marginBottom:8}}>
+          Nivel actual: <strong>{lv.icon} {lv.name}</strong> · Estrellas totales: <strong>{as}⭐</strong>{nextLv?` · Faltan ${nextLv.min-as}⭐ para ${nextLv.name}`:""}<br/>
+          Logros desbloqueados: <strong>{kid.achievements.length}</strong> · Tareas completadas: <strong>{kid.stats.totalDone||0}</strong> · Racha: <strong>{kid.stats.streak||0} días</strong>
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:8}}>
+          <select value={month} onChange={e=>setMonth(e.target.value)} style={{flex:1,minWidth:140,padding:"6px 10px",borderRadius:10,border:"1px solid #ddd",fontFamily:"'Nunito',sans-serif",fontSize:12}}>
+            {(months.length?months:[todayMonth]).map(m=>(
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+          {["all","tasks","wishes","money","messages"].map(f=>(
+            <button key={f} onClick={()=>setFilter(f)}
+              style={{padding:"6px 10px",borderRadius:999,border:"none",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontSize:11,fontWeight:800,background:filter===f?th.p:"#f0f0f0",color:filter===f?"#fff":"#777"}}>
+              {f==="all"?"Todo":f==="tasks"?"Tareas":f==="wishes"?"Deseos":f==="money"?"Dinero":"Mensajes"}
+            </button>
+          ))}
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,fontSize:11,color:"#666",fontWeight:600}}>
+          <span>Mes {month}: ✅ {monthApproved} tareas aprobadas / ⏳ {monthTasks} enviadas</span>
+          <span>🛍️ {monthPriv} canjes · 💶 {monthPayment.toFixed(1)}€ entregados · 🎁 {monthWishes} deseos cumplidos</span>
+        </div>
+      </div>
+      <KidHistory kid={kid} th={th} filter={filter} month={month}/>
     </>
   );
 }
