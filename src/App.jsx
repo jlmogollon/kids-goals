@@ -885,6 +885,13 @@ function TaskCard({ task, comp, kidId, th, dispatch, idx, mult }) {
   const approved=isTodayComp && comp?.approved;
   const effStars=mult>1&&!done?Math.ceil(task.stars*mult):task.stars;
   const isSpecial=task.isSpecial;
+  const handleCompleteClick = () => {
+    if (typeof window !== "undefined") {
+      const ok = window.confirm(`¿Marcar "${task.name}" como hecha y enviarla a papá/mamá?`);
+      if (!ok) return;
+    }
+    dispatch({type:"COMPLETE_TASK",kidId,taskId:task.id});
+  };
   return (
     <div className="card" style={{border:approved?`2px solid ${th.a}`:done?`2px solid ${th.p}88`:`2px solid ${isSpecial?PALETTE.error:"#f0f0f0"}`,
       background:approved?th.l:done?`${th.p}09`:isSpecial?"#FFF5F5":"#fff",animation:`slideUp .35s ${idx*.04}s both`,overflow:"hidden"}}>
@@ -914,8 +921,8 @@ function TaskCard({ task, comp, kidId, th, dispatch, idx, mult }) {
           {mult>1&&!done&&<div style={{fontSize:8,color:PALETTE.error,fontWeight:900}}>x{mult}⚡</div>}
           <div style={{height:36,display:"flex",alignItems:"center",justifyContent:"center",marginTop:4}}>
             {!done
-              ?<button onClick={()=>dispatch({type:"COMPLETE_TASK",kidId,taskId:task.id})}
-                  style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:50,width:36,height:36,cursor:"pointer",fontSize:18,color:"#fff",fontWeight:900,animation:"pulse 2s infinite",boxShadow:`0 4px 12px ${th.p}55`,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0}}>✓</button>
+              ?<button onClick={handleCompleteClick}
+                  style={{background:"#fff",border:`2px solid ${th.p}`,borderRadius:50,width:36,height:36,cursor:"pointer",fontSize:18,color:th.p,fontWeight:900,animation:"pulse 2s infinite",boxShadow:`0 4px 8px ${th.p}33`,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0}}>✓</button>
               :approved
                 ?<div style={{width:36,height:36,borderRadius:"50%",background:th.a,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,lineHeight:1}}>✓</div>
                 :<div style={{width:36,height:36,borderRadius:"50%",background:"#FFB800",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,lineHeight:1}}>⏳</div>}
