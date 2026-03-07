@@ -157,19 +157,21 @@ function reducer(st, a) {
           ...st.kids,
           [a.kidId]:{
             ...kid,
-            name:a.name,
-            dob:a.dob,
+            ...(a.name !== undefined && { name: a.name }),
+            ...(a.dob !== undefined && { dob: a.dob }),
+            ...(a.email !== undefined && { email: a.email }),
             profile:{
               ...(kid.profile||{}),
-              grade:a.grade ?? (kid.profile?.grade||""),
-              strengths:a.strengths ?? (kid.profile?.strengths||""),
-              focusAreas:a.focusAreas ?? (kid.profile?.focusAreas||""),
+              grade:a.grade !== undefined ? a.grade : (kid.profile?.grade||""),
+              strengths:a.strengths !== undefined ? a.strengths : (kid.profile?.strengths||""),
+              focusAreas:a.focusAreas !== undefined ? a.focusAreas : (kid.profile?.focusAreas||""),
             },
           },
         },
       };
     }
     case "SET_PARENT_NAME": return { ...st, parents:{ ...st.parents, [a.parentRole]:{ ...st.parents[a.parentRole], name:a.name } } };
+    case "SET_PARENT_EMAIL": return { ...st, parents:{ ...st.parents, [a.parentRole]:{ ...st.parents[a.parentRole], email:a.email } } };
     case "SET_PARENT_FCM_TOKEN": return { ...st, parentFcmTokens:{ ...st.parentFcmTokens, [a.parentRole]:a.token } };
 
     case "COMPLETE_TASK": {
@@ -956,9 +958,8 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
     <div className="screen" style={{background:th.l}}>
       {/* Header */}
       <div className="screen-header" style={{background:`linear-gradient(135deg,${th.p},${th.a})`,position:"relative",borderRadius:"0 0 28px 28px"}}>
-        {onSwitchRole&&<button onClick={onSwitchRole} style={{position:"absolute",top:"max(1rem,calc(env(safe-area-inset-top,2.75rem) - 4px))",right:52,background:"rgba(255,255,255,.22)",border:"1.5px solid rgba(255,255,255,.4)",borderRadius:50,width:"clamp(2rem,6vw,2.5rem)",height:"clamp(2rem,6vw,2.5rem)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1rem",cursor:"pointer",color:"#fff",zIndex:10}} title="Cambiar de rol">👤</button>}
-        <button onClick={()=>logoutFirebase()} className="logout-btn">🚪</button>
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,paddingRight:48}}>
+        {onSwitchRole&&<button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"exitMenu"}})} className="logout-btn" title="Salir / cambiar de rol">🚪</button>}
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,paddingRight:"3.25rem"}}>
           <Avatar photo={kid.photo} emoji="👦" size={52} color="#fff"
             onClick={ph=>dispatch({type:"SET_KID_PHOTO",kidId,photo:ph})}/>
           <div style={{flex:1,minWidth:0}}>
@@ -1011,7 +1012,7 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
         {st.childTab==="logros"    && <ChildLogros kid={kid} kidId={kidId} as={as} th={th}/>}
         {st.childTab==="tienda"    && <ChildTienda kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} avail={avail}/>}
         {st.childTab==="dinero"    && <MoneyPanel kidId={kidId} kid={kid} tasks={st.tasks} th={th} isParent={false} dispatch={dispatch} approvalLog={st.approvalLog}/>}
-        {st.childTab==="mas"       && <ChildMas kidId={kidId} kid={kid} th={th} dispatch={dispatch} challenges={st.challenges}/>}
+        {st.childTab==="mas"       && <ChildMas kidId={kidId} kid={kid} st={st} th={th} dispatch={dispatch} challenges={st.challenges}/>}
       </div>
 
       <div className="tab-bar">
@@ -1330,7 +1331,7 @@ const ChildTienda = memo(function ChildTienda({ kidId, kid, tasks, th, dispatch,
 });
 
 // ─── CHILD MÁS ──────────────────────────────────────────────────
-const ChildMas = memo(function ChildMas({ kidId, kid, th, dispatch, challenges }) {
+const ChildMas = memo(function ChildMas({ kidId, kid, st, th, dispatch, challenges }) {
   const [subTab,setSubTab]=useState("gratitud");
   const myChallenges=challenges.filter(c=>c.kid1===kidId||c.kid2===kidId);
 
@@ -1391,6 +1392,11 @@ const ChildMas = memo(function ChildMas({ kidId, kid, th, dispatch, challenges }
       )}
 
       {subTab==="historial"&&<KidHistory kid={kid} th={th}/>}
+
+      <div className="card" style={{marginTop:16,border:`2px solid ${th.p}33`,background:`${th.p}08`}}>
+        <div style={{fontWeight:900,fontSize:13,marginBottom:6}}>🔗 Vincular cuenta de Google</div>
+        <p style={{fontSize:12,color:"#666",lineHeight:1.5}}>Para poder iniciar sesión con tu cuenta en otro dispositivo, pide a papá o mamá que añada tu email en <strong>Configuración → perfil de niño</strong>.</p>
+      </div>
     </>
   );
 });
@@ -1564,9 +1570,8 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
     <div className="screen" style={{background:th.l}}>
       {/* Header */}
       <div className="screen-header" style={{background:`linear-gradient(135deg,${th.a},${th.d})`,position:"relative",borderRadius:"0 0 28px 28px"}}>
-        {onSwitchRole&&<button onClick={onSwitchRole} style={{position:"absolute",top:"max(1rem,calc(env(safe-area-inset-top,2.75rem) - 4px))",right:52,background:"rgba(255,255,255,.22)",border:"1.5px solid rgba(255,255,255,.4)",borderRadius:50,width:"clamp(2rem,6vw,2.5rem)",height:"clamp(2rem,6vw,2.5rem)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1rem",cursor:"pointer",color:"#fff",zIndex:10}} title="Cambiar de rol">👤</button>}
-        <button onClick={()=>logoutFirebase()} className="logout-btn">🚪</button>
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,paddingRight:48}}>
+        {onSwitchRole&&<button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"exitMenu"}})} className="logout-btn" title="Salir / cambiar de rol">🚪</button>}
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,paddingRight:"3.25rem"}}>
           <Avatar photo={currentParent.photo} emoji={parentRole==="father"?"👨":"👩"} size={52} color="#fff"
             onClick={ph=>dispatch({type:"SET_PARENT_PHOTO",photo:ph,parentRole})}/>
           <div style={{flex:1,minWidth:0}}>
@@ -1611,7 +1616,7 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
         {st.parentTab==="dinero"   && <ParentDinero st={st} dispatch={dispatch}/>}
         {st.parentTab==="ranking"  && <ParentRanking st={st} dispatch={dispatch}/>}
         {st.parentTab==="historial"&& <ParentHistory st={st}/>}
-        {st.parentTab==="config"   && <ParentConfig st={st} dispatch={dispatch} parentRole={parentRole} currentParent={currentParent}/>}
+        {st.parentTab==="config"   && <ParentConfig st={st} dispatch={dispatch} parentRole={parentRole} currentParent={currentParent} familyId={roleData?.familyId}/>}
       </div>
 
       <div className="tab-bar">
@@ -2027,18 +2032,31 @@ function ParentHistory({ st }) {
 }
 
 // ─── PARENT CONFIG ──────────────────────────────────────────────
-function KidEditor({ id, kid, dispatch }) {
+function KidEditor({ id, kid, dispatch, familyId }) {
   const [name,setName]=useState(kid?.name||"");
   const [dob,setDob]=useState(kid?.dob||"");
   const [grade,setGrade]=useState(kid?.profile?.grade||"");
   const [strengths,setStrengths]=useState(kid?.profile?.strengths||"");
   const [focusAreas,setFocusAreas]=useState(kid?.profile?.focusAreas||"");
+  const [kidEmail,setKidEmail]=useState(kid?.email||"");
   const [edit,setEdit]=useState(false);
+  const [savingLink,setSavingLink]=useState(false);
   const th=getKidColor(id,0); const age=calcAge(dob);
   function save() {
     dispatch({type:"SET_KID_INFO",kidId:id,name,dob,grade,strengths,focusAreas});
     setEdit(false);
     dispatch({type:"TOAST",msg:`✅ Perfil de ${name} guardado`});
+  }
+  async function saveKidLink() {
+    const email = (kidEmail || "").trim().toLowerCase();
+    if (!email) return;
+    setSavingLink(true);
+    try {
+      dispatch({ type: "SET_KID_INFO", kidId: id, email: email || null });
+      if (familyId) await setEmailToFamily(email, { familyId, role: "child", kidId: id, name: name || kid?.name });
+      dispatch({ type: "TOAST", msg: "✅ Cuenta vinculada para este perfil." });
+    } catch (e) { dispatch({ type: "TOAST", msg: "Error al vincular" }); }
+    setSavingLink(false);
   }
   return (
     <div style={{padding:"12px 0",borderBottom:"1px solid #f0f0f0"}}>
@@ -2075,15 +2093,41 @@ function KidEditor({ id, kid, dispatch }) {
           ?<button onClick={()=>setEdit(true)} style={{background:`${th.p}22`,border:"none",borderRadius:10,padding:"7px 12px",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:12,color:th.a}}>✏️</button>
           :<button onClick={save} style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:10,padding:"7px 12px",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:12,color:"#fff"}}>✅</button>}
       </div>
+      <div style={{marginTop:10,marginLeft:0}}>
+        <div style={{fontWeight:800,fontSize:11,color:"#666",marginBottom:4}}>🔗 Vincular cuenta de Google</div>
+        <p style={{fontSize:10,color:"#888",marginBottom:6}}>Si el niño inicia sesión con ese email, verá su perfil.</p>
+        <div style={{display:"flex",gap:6}}>
+          <input type="email" value={kidEmail} onChange={e=>setKidEmail(e.target.value)} placeholder="email@gmail.com"
+            style={{flex:1,padding:"6px 10px",borderRadius:8,border:"2px solid #eee",fontFamily:"'Nunito',sans-serif",fontSize:12}}/>
+          <button onClick={saveKidLink} disabled={savingLink||!kidEmail.trim()}
+            style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:8,padding:"6px 12px",cursor:savingLink?"wait":"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:11,color:"#fff"}}>{savingLink?"…":"Vincular"}</button>
+        </div>
+      </div>
     </div>
   );
 }
 
-function ParentConfig({ st, dispatch, parentRole, currentParent }) {
+function ParentConfig({ st, dispatch, parentRole, currentParent, familyId }) {
   const pr = parentRole || "father";
-  const cp = currentParent || st.parents?.[pr] || { photo: null, name: PARENT_ROLE_LABEL[pr] };
+  const cp = currentParent || st.parents?.[pr] || { photo: null, name: PARENT_ROLE_LABEL[pr], email: null };
   const [pname,setPname]=useState(cp.name||PARENT_ROLE_LABEL[pr]);
+  const [pemail,setPemail]=useState(cp.email||"");
+  const [savingLink,setSavingLink]=useState(false);
   const th = pr === "mother" ? { ...TH.parent, p: "#E91E8C", a: "#C2185B" } : TH.parent;
+  async function saveParentLink() {
+    const email = (pemail || "").trim().toLowerCase();
+    if (!email) return;
+    setSavingLink(true);
+    try {
+      dispatch({ type: "SET_PARENT_EMAIL", parentRole: pr, email: email || null });
+      if (familyId) {
+        await setEmailToFamily(email, { familyId, role: pr, name: pname || cp.name });
+        await saveParentPhoto(familyId, pr, { ...cp, name: pname || cp.name, email });
+      }
+      dispatch({ type: "TOAST", msg: "✅ Cuenta vinculada. Quien inicie sesión con ese email verá esta familia." });
+    } catch (e) { dispatch({ type: "TOAST", msg: "Error al vincular" }); }
+    setSavingLink(false);
+  }
   return (
     <>
       <div className="card" style={{margin:"12px 0"}}>
@@ -2099,9 +2143,19 @@ function ParentConfig({ st, dispatch, parentRole, currentParent }) {
             <button onClick={()=>{dispatch({type:"SET_PARENT_NAME",name:pname,parentRole:pr});dispatch({type:"TOAST",msg:"✅ Nombre actualizado"});}}
               style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:10,padding:"7px 12px",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:12,color:"#fff"}}>✅</button>
           </div>
+          <div style={{marginTop:12}}>
+            <div style={{fontWeight:800,fontSize:12,color:"#666",marginBottom:6}}>🔗 Vincular cuenta de Google</div>
+            <p style={{fontSize:11,color:"#888",marginBottom:8}}>Si esta persona inicia sesión con este email, verá esta familia.</p>
+            <div style={{display:"flex",gap:8}}>
+              <input type="email" value={pemail} onChange={e=>setPemail(e.target.value)} placeholder="email@gmail.com"
+                style={{flex:1,padding:"8px 12px",borderRadius:10,border:"2px solid #eee",fontFamily:"'Nunito',sans-serif",fontSize:13}}/>
+              <button onClick={saveParentLink} disabled={savingLink||!pemail.trim()}
+                style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:10,padding:"8px 14px",cursor:savingLink?"wait":"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:12,color:"#fff"}}>{savingLink?"…":"Vincular"}</button>
+            </div>
+          </div>
         </div>
         {/* Kids */}
-        {(Object.keys(st.kids||{})).map(id=><KidEditor key={id} id={id} kid={st.kids[id]} dispatch={dispatch}/>)}
+        {(Object.keys(st.kids||{})).map(id=><KidEditor key={id} id={id} kid={st.kids[id]} dispatch={dispatch} familyId={familyId}/>)}
       </div>
 
       {!FCM_VAPID_KEY&&(
@@ -2125,9 +2179,9 @@ function ParentConfig({ st, dispatch, parentRole, currentParent }) {
       </div>
 
       <div className="card" style={{background:"#FFF0F0",border:"2px solid #FFD0D0",textAlign:"center"}}>
-        <button onClick={()=>logoutFirebase()}
+        <button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"exitMenu"}})}
           style={{width:"100%",background:"none",border:"none",color:PALETTE.error,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,cursor:"pointer",padding:"8px 4px",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-          🚪 Cerrar sesión / cambiar de usuario
+          🚪 Salir (cambiar de rol o desconectar cuenta)
         </button>
       </div>
     </>
@@ -2161,6 +2215,7 @@ function Modal({ st, dispatch, roleData }) {
   if(m.type==="sendMsg") return wrap(<SendMsgModal m={m} dispatch={dispatch} st={st}/>);
   if(m.type==="editMessage") return wrap(<EditMessageModal m={m} dispatch={dispatch}/>);
   if(m.type==="challenge") return wrap(<ChallengeModal m={m} st={st} dispatch={dispatch}/>);
+  if(m.type==="exitMenu") return wrap(<ExitMenuModal m={m} dispatch={dispatch} close={close}/>);
   return null;
 }
 
@@ -2186,6 +2241,60 @@ function compressImage(file, maxW=800, quality=0.75) {
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Error al cargar imagen")); };
     img.src = url;
   });
+}
+
+function ExitMenuModal({ m, dispatch, close }) {
+  const step = m.confirmStep || null;
+  const back = () => dispatch({ type: "OPEN_MODAL", modal: { type: "exitMenu" } });
+  const doSwitchRole = () => {
+    dispatch({ type: "SET_ACTING_AS", actingAs: null, screen: "whoIsUsing" });
+    dispatch({ type: "CLOSE_MODAL" });
+  };
+  const doLogout = () => {
+    close();
+    logoutFirebase();
+  };
+  if (step === "switch") {
+    return (
+      <>
+        <h2 style={{fontWeight:900,marginBottom:12}}>👤 Cambiar de rol</h2>
+        <p style={{color:"#666",fontSize:14,marginBottom:20}}>Volverás a la pantalla «¿Quién usa la app?» para elegir otro perfil.</p>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={back} style={{flex:1,background:"#f0f0f0",color:"#555",border:"none",borderRadius:14,padding:14,fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:14,cursor:"pointer"}}>Cancelar</button>
+          <button onClick={doSwitchRole} style={{flex:1,background:"linear-gradient(135deg,#4A7A1E,#2D5010)",color:"#fff",border:"none",borderRadius:14,padding:14,fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:14,cursor:"pointer"}}>Aceptar</button>
+        </div>
+      </>
+    );
+  }
+  if (step === "logout") {
+    return (
+      <>
+        <h2 style={{fontWeight:900,marginBottom:12}}>🚪 Desconectar cuenta</h2>
+        <p style={{color:"#666",fontSize:14,marginBottom:20}}>Se cerrará la sesión de Google. Para volver a entrar tendrás que iniciar sesión de nuevo.</p>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={back} style={{flex:1,background:"#f0f0f0",color:"#555",border:"none",borderRadius:14,padding:14,fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:14,cursor:"pointer"}}>Cancelar</button>
+          <button onClick={doLogout} style={{flex:1,background:PALETTE.error,color:"#fff",border:"none",borderRadius:14,padding:14,fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:14,cursor:"pointer"}}>Desconectar</button>
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      <h2 style={{fontWeight:900,marginBottom:12}}>Salir</h2>
+      <p style={{color:"#666",fontSize:13,marginBottom:18}}>¿Qué quieres hacer?</p>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        <button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"exitMenu",confirmStep:"switch"}})}
+          style={{width:"100%",background:"linear-gradient(135deg,#4A7A1E,#2D5010)",color:"#fff",border:"none",borderRadius:14,padding:14,fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:14,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:10}}>
+          👤 Cambiar de rol
+        </button>
+        <button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"exitMenu",confirmStep:"logout"}})}
+          style={{width:"100%",background:"#fff",color:PALETTE.error,border:`2px solid ${PALETTE.error}`,borderRadius:14,padding:14,fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:14,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:10}}>
+          🚪 Desconectar cuenta de Google
+        </button>
+      </div>
+      <button onClick={close} style={{marginTop:14,width:"100%",background:"#f0f0f0",color:"#555",border:"none",borderRadius:14,padding:12,fontFamily:"'Nunito',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer"}}>Cerrar</button>
+    </>
+  );
 }
 
 function EvidenceModal({ m, dispatch }) {
