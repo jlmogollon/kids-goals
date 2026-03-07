@@ -921,7 +921,7 @@ function WhoIsUsingScreen({ st, dispatch, roleData }) {
 // ═══════════════════════════════════════════════════════════════════════
 // CHILD SCREEN
 // ═══════════════════════════════════════════════════════════════════════
-function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData }) {
+function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, onSwitchRole }) {
   const kidIds = Object.keys(st.kids || {});
   const kidId = st.activeKid || st.actingAs?.kidId || roleData?.kidId || kidIds[0];
   const kid = kidId ? st.kids[kidId] : (kidIds.length ? st.kids[kidIds[0]] : null);
@@ -1545,7 +1545,7 @@ const MoneyPanel = memo(function MoneyPanel({ kidId, kid, tasks, th, isParent, d
 // PARENT SCREEN
 // ═══════════════════════════════════════════════════════════════════════
 const PARENT_ROLE_LABEL = { father: "Papá", mother: "Mamá" };
-function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData }) {
+function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, onSwitchRole }) {
   const parentRole = (roleData?.role === "mother" || roleData?.role === "father") ? roleData.role : "father";
   const currentParent = st.parents?.[parentRole] || { photo: null, name: PARENT_ROLE_LABEL[parentRole] };
   const th = parentRole === "mother" ? { ...TH.parent, p: "#E91E8C", a: "#C2185B", l: "#FCE4EC", d: "#880E4F" } : TH.parent;
