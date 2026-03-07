@@ -1,8 +1,15 @@
 export const TH = {
-  jose:   { p:"#8DC63F", a:"#5A9A20", l:"#F0FAE6", d:"#3A6A10" },
-  david:  { p:"#5BC8F5", a:"#1FA8DE", l:"#EBF8FF", d:"#0D7FAD" },
   parent: { p:"#FFB800", a:"#CC8800", l:"#FFFBEA", d:"#996600" },
 };
+// Colores por índice para hijos (se asigna al crear)
+export const KID_COLORS = [
+  { p:"#8DC63F", a:"#5A9A20", l:"#F0FAE6", d:"#3A6A10" },
+  { p:"#5BC8F5", a:"#1FA8DE", l:"#EBF8FF", d:"#0D7FAD" },
+  { p:"#FF85C2", a:"#E91E8C", l:"#FFE6F2", d:"#AD1457" },
+  { p:"#A78BFA", a:"#7C3AED", l:"#EDE9FE", d:"#5B21B6" },
+  { p:"#FF8C42", a:"#EA580C", l:"#FFEDD5", d:"#C2410C" },
+];
+export const RELATIONSHIP_LABELS = ["Hijo", "Hija", "Sobrino", "Sobrina", "Primo", "Prima", "Otro"];
 
 export const PALETTE = {
   error:"#C62828",
@@ -15,11 +22,6 @@ export const PALETTE = {
   muted:"#888",
   border:"#f0f0f0",
   borderLight:"#e8e8e8",
-};
-
-export const FIXED_PARENT_EMAILS = {
-  "monsterk17@gmail.com": "father",
-  "cilvane2017@gmail.com": "mother",
 };
 
 export const CAT_CLR = {

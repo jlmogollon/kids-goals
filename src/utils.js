@@ -1,4 +1,4 @@
-import { ACHIEV, INIT_TASKS, STARS_PER_EURO, LEVELS } from "./constants";
+import { ACHIEV, INIT_TASKS, STARS_PER_EURO, LEVELS, KID_COLORS } from "./constants";
 
 export function getTodayIdx() {
   const d = new Date().getDay();
@@ -139,7 +139,10 @@ export function balance(kid, tasks) {
 }
 
 export function kidName(kid, id) {
-  return kid?.name || (id === "jose" ? "José" : "David");
+  return kid?.name || "Niño";
+}
+export function getKidColor(kidId, index) {
+  return KID_COLORS[Math.abs(index ?? 0) % KID_COLORS.length];
 }
 
 export function checkNewAchievements(kid, tasks) {
@@ -179,20 +182,17 @@ export function mkKid(name, dob) {
 
 export function initState() {
   return {
-    screen: "auth",    // auth | welcome | child | parent
+    screen: "auth",
     loggedAccount: null,
+    actingAs: null,      // { role: 'father'|'mother'|'child', kidId?: string }
     activeKid: null,
     tasks: INIT_TASKS,
-    kids: {
-      jose:  mkKid("José",  "2013-06-15"),
-      david: mkKid("David", "2016-09-22"),
-    },
-    parents: { father: { photo: null, name: "Papá" }, mother: { photo: null, name: "Mamá" } },
+    kids: {},
+    parents: { father: { photo: null, name: "Papá", email: null }, mother: { photo: null, name: "Mamá", email: null } },
     notifications: [],
     approvalLog: [],
     challenges: [],
     weeklyGoal: { target: 40, current: 0 },
-    // UI
     childTab: "hoy",
     parentTab: "notifs",
     modal: null,

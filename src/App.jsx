@@ -40,22 +40,29 @@ function logoutFirebase()            { return signOut(auth); }
 function onAuth(cb)                  { return onAuthStateChanged(auth, cb); }
 async function getUserRole(uid)      { const s=await getDoc(doc(db,"users",uid)); return s.exists()?s.data():null; }
 async function setUserRole(uid,data) { return setDoc(doc(db,"users",uid),data,{merge:true}); }
-async function loadAppState() {
-  const s=await getDoc(doc(db,"appData","main"));
+function emailKey(email) { return (email||"").replace(/\./g,"_").toLowerCase(); }
+async function getFamilyByEmail(email) { const s=await getDoc(doc(db,"emailToFamily",emailKey(email))); return s.exists()?s.data():null; }
+async function setEmailToFamily(email, data) { if(!email) return; return setDoc(doc(db,"emailToFamily",emailKey(email)),data); }
+
+async function loadAppState(familyId) {
+  if(!familyId) return null;
+  let s=await getDoc(doc(db,"appData",familyId));
+  if(!s.exists() && familyId !== "main") {
+    const mainDoc=await getDoc(doc(db,"appData","main"));
+    if(mainDoc.exists()) return mainDoc.data();
+    return null;
+  }
   if(!s.exists()) return null;
   const d=s.data();
-  // Usar lista guardada como fuente de verdad. Solo usar INIT_TASKS si no hay tareas (primera vez).
   if (!Array.isArray(d.tasks) || d.tasks.length === 0) d.tasks = INIT_TASKS;
-  // Migrar parent antiguo → parents
   if(d.parent && !d.parents) {
-    d.parents={ father: { ...d.parent, name: d.parent.name||"Papá" }, mother: { ...d.parent, name: d.parent.name||"Mamá" } };
+    d.parents={ father: { ...d.parent, name: d.parent.name||"Papá", email: null }, mother: { ...d.parent, name: d.parent.name||"Mamá", email: null } };
     delete d.parent;
   }
   if(d.parentFcmToken && !d.parentFcmTokens) {
     d.parentFcmTokens={ father: d.parentFcmToken, mother: d.parentFcmToken };
     delete d.parentFcmToken;
   }
-  // Migrar kids: approvedCompletions y racha (streak)
   const tasks = d.tasks || INIT_TASKS;
   if (d.kids && typeof d.kids === "object") {
     const today = new Date().toISOString().slice(0, 10);
@@ -89,27 +96,33 @@ async function loadAppState() {
   }
   return d;
 }
-async function saveAppState(state)   {
-  const {screen,modal,toast,confetti,loggedAccount,authUser,loading,...data}=state;
+async function saveAppState(familyId, state)   {
+  if(!familyId) return;
+  const {screen,modal,toast,confetti,loggedAccount,authUser,loading,actingAs,...data}=state;
   const toSave={...data};
   if(toSave.parent) { delete toSave.parent; }
   if(toSave.parentFcmToken) { delete toSave.parentFcmToken; }
-  return setDoc(doc(db,"appData","main"),toSave);
+  return setDoc(doc(db,"appData",familyId),toSave);
 }
-async function setParentFcmToken(parentRole, token) {
-  return setDoc(doc(db,"appData","main"), { [`parentFcmTokens.${parentRole}`]: token }, { merge: true });
+async function setParentFcmToken(familyId, parentRole, token) {
+  if(!familyId) return;
+  return setDoc(doc(db,"appData",familyId), { [`parentFcmTokens.${parentRole}`]: token }, { merge: true });
 }
-async function saveParentPhoto(parentRole, parentData) {
-  if (!parentData?.photo && !parentData?.name) return;
-  return setDoc(doc(db,"appData","main"), { [`parents.${parentRole}`]: { photo: parentData.photo || null, name: parentData.name || (parentRole==="father"?"Papá":"Mamá") } }, { merge: true });
+async function saveParentPhoto(familyId, parentRole, parentData) {
+  if(!familyId || !parentData?.photo && !parentData?.name) return;
+  return setDoc(doc(db,"appData",familyId), { [`parents.${parentRole}`]: { photo: parentData.photo || null, name: parentData.name || (parentRole==="father"?"Papá":"Mamá"), email: parentData.email || null } }, { merge: true });
 }
-async function setChildFcmToken(kidId, token) {
-  return setDoc(doc(db,"appData","fcmTokens"), { [kidId]: token }, { merge: true });
+async function setChildFcmToken(familyId, kidId, token) {
+  if(!familyId) return;
+  return setDoc(doc(db,"appData",familyId), { [`childFcmTokens.${kidId}`]: token }, { merge: true });
 }
-function subscribeAppState(cb) { return onSnapshot(doc(db,"appData","main"),(s)=>{ if(s.exists()) cb(s.data()); }); }
+function subscribeAppState(familyId, cb) {
+  if(!familyId) return ()=>{};
+  return onSnapshot(doc(db,"appData",familyId),(s)=>{ if(s.exists()) cb(s.data()); });
+}
 
-import { TH, PALETTE, FIXED_PARENT_EMAILS, CAT_CLR, STARS_PER_EURO, DAY_LABELS, DAY_FULL, ACHIEV, PRIVILEGES, INIT_TASKS } from "./constants";
-import { getTodayIdx, taskActiveOn, taskActiveToday, calcAge, getLevel, getNextLevel, getStreakMult, fmt, isToday, approvedStars, availableStars, pendingStars, totalEuros, paidOut, balance, kidName, checkNewAchievements, computeStreak, mkKid, initState } from "./utils";
+import { TH, PALETTE, CAT_CLR, STARS_PER_EURO, DAY_LABELS, DAY_FULL, ACHIEV, PRIVILEGES, INIT_TASKS, RELATIONSHIP_LABELS, KID_COLORS } from "./constants";
+import { getTodayIdx, taskActiveOn, taskActiveToday, calcAge, getLevel, getNextLevel, getStreakMult, fmt, isToday, approvedStars, availableStars, pendingStars, totalEuros, paidOut, balance, kidName, checkNewAchievements, computeStreak, getKidColor, mkKid, initState } from "./utils";
 
 // Escala en rem para que tipografía y espaciado sigan el tamaño base responsive (index.css)
 const rem = (px) => `${Number(px) / 16}rem`;
@@ -119,8 +132,12 @@ const rem = (px) => `${Number(px) / 16}rem`;
 // ═══════════════════════════════════════════════════════════════════════
 function reducer(st, a) {
   switch(a.type) {
-    case "AUTH_LOGIN": return { ...st, screen: (a.account.role==="father"||a.account.role==="mother"||a.account.role==="parent")?"parent":"child", loggedAccount: a.account, activeKid: a.account.kidId||null };
+    case "AUTH_LOGIN": return { ...st, screen: (a.account.role==="father"||a.account.role==="mother"||a.account.role==="parent")?"parent":"child", loggedAccount: a.account, activeKid: a.account.kidId||null, actingAs: (a.account.role==="father"||a.account.role==="mother") ? { role: a.account.role } : { role: "child", kidId: a.account.kidId } };
     case "AUTH_LOGOUT": return { ...initState(), screen:"auth" };
+    case "LINK_ACCOUNT_DONE": return { ...initState(), ...a.saved, screen: "whoIsUsing", loggedAccount: a.linkData, actingAs: (a.linkData.role==="father"||a.linkData.role==="mother") ? { role: a.linkData.role } : { role: "child", kidId: a.linkData.kidId }, activeKid: a.linkData.kidId || null };
+    case "SET_ONBOARDING_STEP": return { ...st, onboardingStep: a.step };
+    case "ONBOARDING_FINISH": return { ...a.state };
+    case "SET_ACTING_AS": return { ...st, actingAs: a.actingAs, screen: a.screen || st.screen, activeKid: a.activeKid !== undefined ? a.activeKid : st.activeKid };
     case "NAV": return { ...st, screen:a.screen, activeKid:a.kid||st.activeKid };
     case "SET_CHILD_TAB": return { ...st, childTab:a.tab };
     case "SET_PARENT_TAB": return { ...st, parentTab:a.tab };
@@ -601,7 +618,7 @@ function HomeWidget({ kid, kidId, tasks }) {
   if(!kid) return null;
   const as=approvedStars(kid,tasks);
   const lv=getLevel(as);
-  const th=TH[kidId];
+  const th=getKidColor(kidId, 0);
   const todayT=tasks.filter(t=>taskActiveToday(t.days));
   const doneT=todayT.filter(t=>{
     const c=kid.completions[t.id];
@@ -723,14 +740,193 @@ function RoleScreen({ user, onRole }) {
   );
 }
 
+// ─── VINCULAR CUENTA (email encontrado en una familia) ─────────────────
+function LinkAccountScreen({ st, dispatch, linkUid, linkEmail, linkData, setRoleData, authUser }) {
+  const [loading, setLoading] = useState(false);
+  async function confirmLink() {
+    setLoading(true);
+    await setUserRole(linkUid, { ...linkData, email: linkEmail, photo: authUser?.photoURL, name: authUser?.displayName });
+    const saved = await loadAppState(linkData.familyId);
+    const account = { ...linkData, uid: linkUid, email: linkEmail, googlePhoto: authUser?.photoURL };
+    setRoleData(account);
+    dispatch({ type: "LINK_ACCOUNT_DONE", saved, linkData: account });
+  }
+  const roleLabel = linkData.role === "father" ? "Padre" : linkData.role === "mother" ? "Madre" : linkData.name || "Miembro";
+  return (
+    <div className="screen" style={{background:"linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 60%,#FFFBEA 100%)",alignItems:"center",justifyContent:"center",overflowY:"auto",padding:rem(40)+" "+rem(24)}}>
+      <div style={{textAlign:"center",marginBottom:rem(24)}}>
+        <div style={{fontSize:rem(48),marginBottom:rem(12)}}>🔗</div>
+        <h2 style={{fontWeight:900,fontSize:"clamp(1.1rem, 4vw, 1.4rem)",color:"#222"}}>Vincular cuenta</h2>
+        <p style={{color:"#555",fontSize:rem(13),marginTop:rem(8),lineHeight:1.5}}>Tu correo está en una familia como <strong>{roleLabel}</strong>. ¿Vincular esta cuenta para sincronizar tus datos?</p>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:rem(12),width:"100%",maxWidth:rem(320)}}>
+        <button onClick={confirmLink} disabled={loading} style={{background:"linear-gradient(135deg,#4A7A1E,#2D5010)",color:"#fff",border:"none",borderRadius:rem(14),padding:rem(16),fontWeight:900,fontSize:rem(15),cursor:"pointer"}}>{loading?"Guardando...":"Sí, vincular"}</button>
+        <button onClick={()=>logoutFirebase()} style={{background:"#f0f0f0",color:"#555",border:"none",borderRadius:rem(14),padding:rem(16),fontWeight:800,fontSize:rem(14),cursor:"pointer"}}>Usar otra cuenta</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── ONBOARDING: rol → miembros → tareas → PIN ───────────────────────
+function OnboardingWizard({ st, dispatch, authUser, setRoleData, setAppLoading }) {
+  const step = st.onboardingStep || 1;
+  const [myRole, setMyRole] = useState(null);
+  const [otherParent, setOtherParent] = useState({ add: false, name: "", email: "" });
+  const [children, setChildren] = useState([]);
+  const [selectedTaskIds, setSelectedTaskIds] = useState(new Set(INIT_TASKS.slice(0, 8).map(t=>t.id)));
+  const [pin, setPin] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function finishOnboarding() {
+    setLoading(true);
+    const uid = authUser.uid;
+    const tasks = INIT_TASKS.filter(t => selectedTaskIds.has(t.id));
+    const nextId = Math.max(200, ...tasks.map(t=>t.id), 0) + 1;
+    const kids = {};
+    children.forEach((c, i) => {
+      const id = `kid_${i+1}`;
+      kids[id] = { ...mkKid(c.name, c.dob || null), label: c.label || "Hijo" };
+      if (c.email) setEmailToFamily(c.email, { familyId: uid, role: "child", kidId: id, name: c.name });
+    });
+    const parents = { father: { photo: null, name: "Papá", email: null }, mother: { photo: null, name: "Mamá", email: null } };
+    if (myRole === "father") parents.father = { photo: authUser.photoURL, name: authUser.displayName || "Papá", email: authUser.email };
+    else if (myRole === "mother") parents.mother = { photo: authUser.photoURL, name: authUser.displayName || "Mamá", email: authUser.email };
+    if (otherParent.add) {
+      const role = myRole === "father" ? "mother" : "father";
+      parents[role] = { photo: null, name: otherParent.name || (role==="father"?"Papá":"Mamá"), email: otherParent.email || null };
+      if (otherParent.email) setEmailToFamily(otherParent.email, { familyId: uid, role, name: otherParent.name });
+    }
+    const initialState = { ...initState(), tasks, kids, parents, nextId };
+    await saveAppState(uid, initialState);
+    await setUserRole(uid, { role: myRole, familyId: uid, name: authUser.displayName, email: authUser.email, photo: authUser.photoURL, pinHash: pin || null });
+    const loggedAccount = { uid, role: myRole, familyId: uid, name: authUser.displayName, email: authUser.email, googlePhoto: authUser.photoURL };
+    setRoleData(loggedAccount);
+    setAppLoading(false);
+    dispatch({ type: "ONBOARDING_FINISH", state: { ...initialState, screen: "whoIsUsing", loggedAccount, actingAs: { role: myRole }, activeKid: null } });
+  }
+
+  const canNext = (step===1 && myRole) || (step===2) || (step===3 && selectedTaskIds.size>0) || step===4;
+  const handleNext = () => {
+    if (step < 4) dispatch({ type: "SET_ONBOARDING_STEP", step: step + 1 });
+    else finishOnboarding();
+  };
+
+  return (
+    <div className="screen" style={{background:"linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 60%,#FFFBEA 100%)",overflowY:"auto",padding:rem(24)}}>
+      <div style={{maxWidth:rem(400),margin:"0 auto"}}>
+        <h2 style={{fontWeight:900,fontSize:rem(18),color:"#2D5010",marginBottom:rem(16)}}>Paso {step} de 4</h2>
+        {step === 1 && (
+          <>
+            <p style={{marginBottom:rem(12),fontSize:rem(14),color:"#555"}}>¿Cuál es tu rol?</p>
+            <div style={{display:"flex",gap:rem(12),flexWrap:"wrap"}}>
+              <button onClick={()=>setMyRole("father")} style={{flex:1,minWidth:rem(120),background:myRole==="father"?"#FFB800":"#f0f0f0",color:myRole==="father"?"#fff":"#333",border:"none",borderRadius:rem(12),padding:rem(14),fontWeight:800}}>👨 Padre</button>
+              <button onClick={()=>setMyRole("mother")} style={{flex:1,minWidth:rem(120),background:myRole==="mother"?"#E91E8C":"#f0f0f0",color:myRole==="mother"?"#fff":"#333",border:"none",borderRadius:rem(12),padding:rem(14),fontWeight:800}}>👩 Madre</button>
+            </div>
+          </>
+        )}
+        {step === 2 && (
+          <>
+            <p style={{marginBottom:rem(8),fontSize:rem(14),color:"#555"}}>¿Añadir al otro padre/madre?</p>
+            <label style={{display:"flex",alignItems:"center",gap:rem(8),marginBottom:rem(12)}}><input type="checkbox" checked={otherParent.add} onChange={e=>setOtherParent(p=>({...p,add:e.target.checked}))}/> Sí</label>
+            {otherParent.add && (<><input type="text" placeholder="Nombre" value={otherParent.name} onChange={e=>setOtherParent(p=>({...p,name:e.target.value}))} style={{width:"100%",padding:rem(10),borderRadius:rem(10),border:"1px solid #ddd",marginBottom:rem(8)}}/><input type="email" placeholder="Email (opcional, para vincular después)" value={otherParent.email} onChange={e=>setOtherParent(p=>({...p,email:e.target.value}))} style={{width:"100%",padding:rem(10),borderRadius:rem(10),border:"1px solid #ddd"}}/></>)}
+            <p style={{marginTop:rem(20),marginBottom:rem(8),fontSize:rem(14),color:"#555"}}>Hijos (relación + nombre)</p>
+            {children.map((c,i)=>(<div key={i} style={{display:"flex",gap:rem(8),marginBottom:rem(8)}}><select value={c.label} onChange={e=>setChildren(prev=>{const p=[...prev];p[i]={...p[i],label:e.target.value};return p;})} style={{padding:rem(8),borderRadius:rem(8)}}>{RELATIONSHIP_LABELS.map(l=><option key={l} value={l}>{l}</option>)}</select><input type="text" placeholder="Nombre" value={c.name} onChange={e=>setChildren(prev=>{const p=[...prev];p[i]={...p[i],name:e.target.value};return p;})} style={{flex:1,padding:rem(8),borderRadius:rem(8),border:"1px solid #ddd"}}/><input type="email" placeholder="Email (opc.)" value={c.email||""} onChange={e=>setChildren(prev=>{const p=[...prev];p[i]={...p[i],email:e.target.value||null};return p;})} style={{flex:1,padding:rem(8),borderRadius:rem(8),border:"1px solid #ddd"}}/><button type="button" onClick={()=>setChildren(prev=>prev.filter((_,j)=>j!==i))} style={{padding:rem(8),background:"#fee",borderRadius:rem(8)}}>✕</button></div>))}
+            <button type="button" onClick={()=>setChildren(prev=>[...prev,{label:"Hijo",name:"",email:null}])} style={{marginTop:rem(8),padding:rem(10),background:"#e8f4e8",borderRadius:rem(10),fontWeight:800}}>+ Añadir hijo</button>
+          </>
+        )}
+        {step === 3 && (
+          <>
+            <p style={{marginBottom:rem(12),fontSize:rem(14),color:"#555"}}>Elige las tareas con las que quieres empezar (puedes añadir más después)</p>
+            <div style={{maxHeight:rem(280),overflowY:"auto"}}>
+              {INIT_TASKS.map(t=>(<label key={t.id} style={{display:"flex",alignItems:"center",gap:rem(8),padding:rem(6),cursor:"pointer"}}><input type="checkbox" checked={selectedTaskIds.has(t.id)} onChange={e=>setSelectedTaskIds(prev=>{const n=new Set(prev);if(e.target.checked)n.add(t.id);else n.delete(t.id);return n;})}/><span>{t.emoji} {t.name}</span></label>))}
+            </div>
+          </>
+        )}
+        {step === 4 && (
+          <>
+            <p style={{marginBottom:rem(12),fontSize:rem(14),color:"#555"}}>Clave de 4 dígitos (opcional). La usarás para cambiar de rol en este dispositivo.</p>
+            <input type="password" inputMode="numeric" maxLength={4} placeholder="1234" value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,4))} style={{width:rem(120),padding:rem(12),fontSize:rem(18),textAlign:"center",borderRadius:rem(10),border:"2px solid #8DC63F"}}/>
+          </>
+        )}
+        <div style={{marginTop:rem(24),display:"flex",gap:rem(12)}}>
+          {step > 1 && <button onClick={()=>dispatch({type:"SET_ONBOARDING_STEP",step:step-1})} style={{padding:rem(12),background:"#f0f0f0",borderRadius:rem(12),fontWeight:800}}>Atrás</button>}
+          <button onClick={handleNext} disabled={!canNext || loading} style={{flex:1,padding:rem(14),background:"#4A7A1E",color:"#fff",border:"none",borderRadius:rem(12),fontWeight:900}}>{step===4?(loading?"Creando...":"Crear familia"):"Continuar"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── QUIÉN USA LA APP (cambio de rol / PIN) ──────────────────────────
+function WhoIsUsingScreen({ st, dispatch, roleData }) {
+  const [pinInput, setPinInput] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [error, setError] = useState("");
+  const kidIds = Object.keys(st.kids || {});
+  const members = [
+    ...(st.parents?.father?.name ? [{ id: "father", role: "father", label: st.parents.father.name }] : []),
+    ...(st.parents?.mother?.name ? [{ id: "mother", role: "mother", label: st.parents.mother.name }] : []),
+    ...kidIds.map(id => ({ id, role: "child", kidId: id, label: st.kids[id]?.name || id })),
+  ].filter(m => m.label);
+
+  function onSelect(m) {
+    const isParent = m.role === "father" || m.role === "mother";
+    dispatch({ type: "SET_ACTING_AS", actingAs: isParent ? { role: m.role } : { role: "child", kidId: m.kidId }, screen: isParent ? "parent" : "child", activeKid: m.kidId || null });
+  }
+  function handleSelect(m) {
+    setSelected(m);
+    setError("");
+    setPinInput("");
+    const needPin = roleData?.pinHash && (m.role !== st.loggedAccount?.role || (m.role === "child" && m.kidId !== st.loggedAccount?.kidId));
+    if (!needPin) {
+      onSelect(m);
+      return;
+    }
+  }
+  function confirmPin() {
+    if (!selected) return;
+    const correct = (roleData?.pinHash || "") === pinInput;
+    if (correct) onSelect(selected);
+    else setError("Clave incorrecta");
+  }
+
+  if (members.length === 0) {
+    const isParent = st.loggedAccount?.role === "father" || st.loggedAccount?.role === "mother";
+    dispatch({ type: "SET_ACTING_AS", actingAs: isParent ? { role: st.loggedAccount.role } : { role: "child", kidId: kidIds[0] }, screen: isParent ? "parent" : "child", activeKid: kidIds[0] || null });
+    return null;
+  }
+
+  return (
+    <div className="screen" style={{background:"linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 60%,#FFFBEA 100%)",alignItems:"center",justifyContent:"center",overflowY:"auto",padding:rem(24)}}>
+      <div style={{textAlign:"center",marginBottom:rem(24)}}>
+        <h2 style={{fontWeight:900,fontSize:rem(18),color:"#222"}}>¿Quién usa la app?</h2>
+        <p style={{color:"#666",fontSize:rem(13),marginTop:rem(6)}}>Elige para continuar (o cambiar de rol)</p>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:rem(10),width:"100%",maxWidth:rem(320)}}>
+        {members.map(m => (
+          <button key={m.id + (m.kidId||"")} onClick={()=>handleSelect(m)} style={{background:selected?.id===m.id && selected?.kidId===m.kidId ? "#4A7A1E" : "#f0f0f0",color:selected?.id===m.id ? "#fff" : "#333",border:"none",borderRadius:rem(14),padding:rem(16),fontWeight:800,fontSize:rem(15),cursor:"pointer"}}>{m.label}</button>
+        ))}
+        {selected && roleData?.pinHash && (selected.role !== st.loggedAccount?.role || (selected.role==="child" && selected.kidId !== st.loggedAccount?.kidId)) && (
+          <div style={{marginTop:rem(12)}}>
+            <input type="password" inputMode="numeric" maxLength={4} placeholder="Clave 4 dígitos" value={pinInput} onChange={e=>setPinInput(e.target.value.replace(/\D/g,"").slice(0,4))} style={{width:"100%",padding:rem(12),borderRadius:rem(10),border:"2px solid #8DC63F",marginBottom:rem(8)}}/>
+            {error && <p style={{color:PALETTE.error,fontSize:rem(12),marginBottom:rem(8)}}>{error}</p>}
+            <button onClick={confirmPin} style={{width:"100%",padding:rem(12),background:"#2D5010",color:"#fff",border:"none",borderRadius:rem(10),fontWeight:800}}>Entrar</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // CHILD SCREEN
 // ═══════════════════════════════════════════════════════════════════════
 function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData }) {
-  const kidId = st.activeKid || roleData?.kidId || "jose";
-  const kid = st.kids[kidId] || st.kids.jose || st.kids.david;
-  if (!kid) return <div className="screen" style={{display:"flex",alignItems:"center",justifyContent:"center",background:"#f5f5f5"}}><p>Cargando...</p></div>;
-  const th=TH[kidId] || TH.jose;
+  const kidIds = Object.keys(st.kids || {});
+  const kidId = st.activeKid || st.actingAs?.kidId || roleData?.kidId || kidIds[0];
+  const kid = kidId ? st.kids[kidId] : (kidIds.length ? st.kids[kidIds[0]] : null);
+  if (!kid) return <div className="screen" style={{display:"flex",alignItems:"center",justifyContent:"center",background:"#f5f5f5"}}><p>No hay ningún niño. Añade uno en la configuración.</p></div>;
+  const th = getKidColor(kidId, kidIds.indexOf(kidId));
   const as=approvedStars(kid,st.tasks);
   const ps=pendingStars(kid,st.tasks);
   const lv=getLevel(as);
@@ -760,9 +956,10 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData }
     <div className="screen" style={{background:th.l}}>
       {/* Header */}
       <div className="screen-header" style={{background:`linear-gradient(135deg,${th.p},${th.a})`,position:"relative",borderRadius:"0 0 28px 28px"}}>
+        {onSwitchRole&&<button onClick={onSwitchRole} style={{position:"absolute",top:"max(1rem,calc(env(safe-area-inset-top,2.75rem) - 4px))",right:52,background:"rgba(255,255,255,.22)",border:"1.5px solid rgba(255,255,255,.4)",borderRadius:50,width:"clamp(2rem,6vw,2.5rem)",height:"clamp(2rem,6vw,2.5rem)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1rem",cursor:"pointer",color:"#fff",zIndex:10}} title="Cambiar de rol">👤</button>}
         <button onClick={()=>logoutFirebase()} className="logout-btn">🚪</button>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,paddingRight:48}}>
-          <Avatar photo={kid.photo} emoji={kidId==="jose"?"👦🏻":"👦🏽"} size={52} color="#fff"
+          <Avatar photo={kid.photo} emoji="👦" size={52} color="#fff"
             onClick={ph=>dispatch({type:"SET_KID_PHOTO",kidId,photo:ph})}/>
           <div style={{flex:1,minWidth:0}}>
             <p style={{color:"rgba(255,255,255,.8)",fontSize:11,fontWeight:700}}>¡Hola!</p>
@@ -1182,7 +1379,7 @@ const ChildMas = memo(function ChildMas({ kidId, kid, th, dispatch, challenges }
                     <div style={{display:"flex",justifyContent:"space-between",marginTop:8,alignItems:"center"}}>
                       <div style={{textAlign:"center"}}><div style={{fontSize:24,fontWeight:900,color:th.p}}>{myCount}</div><div style={{fontSize:11,color:th.a,fontWeight:700}}>Tú</div></div>
                       <div style={{fontSize:16,color:"#aaa"}}>vs</div>
-                      <div style={{textAlign:"center"}}><div style={{fontSize:24,fontWeight:900,color:TH[opId].p}}>{theirCount}</div><div style={{fontSize:11,color:TH[opId].a,fontWeight:700}}>{opId==="jose"?"José":"David"}</div></div>
+                      <div style={{textAlign:"center"}}><div style={{fontSize:24,fontWeight:900,color:getKidColor(opId,0).p}}>{theirCount}</div><div style={{fontSize:11,color:getKidColor(opId,0).a,fontWeight:700}}>{st.kids[opId]?.name||opId}</div></div>
                     </div>
                     {c.winner&&<div style={{textAlign:"center",fontWeight:900,color:c.winner===kidId?"#4A7A1E":PALETTE.error,marginTop:6}}>{c.winner===kidId?"🏆 ¡Ganaste!":"😅 Perdiste esta vez"}</div>}
                     <div style={{fontSize:11,color:"#aaa",marginTop:4}}>Hasta: {c.deadline}</div>
@@ -1273,7 +1470,7 @@ const MoneyPanel = memo(function MoneyPanel({ kidId, kid, tasks, th, isParent, d
   const te = Math.floor(as/STARS_PER_EURO);
   const paid = paidOut(kid);
   const bal = te - paid;
-  const kname=kid.name||(kidId==="jose"?"José":"David");
+  const kname=kid.name||kidName(kid,kidId);
 
   return (
     <>
@@ -1367,6 +1564,7 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData 
     <div className="screen" style={{background:th.l}}>
       {/* Header */}
       <div className="screen-header" style={{background:`linear-gradient(135deg,${th.a},${th.d})`,position:"relative",borderRadius:"0 0 28px 28px"}}>
+        {onSwitchRole&&<button onClick={onSwitchRole} style={{position:"absolute",top:"max(1rem,calc(env(safe-area-inset-top,2.75rem) - 4px))",right:52,background:"rgba(255,255,255,.22)",border:"1.5px solid rgba(255,255,255,.4)",borderRadius:50,width:"clamp(2rem,6vw,2.5rem)",height:"clamp(2rem,6vw,2.5rem)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1rem",cursor:"pointer",color:"#fff",zIndex:10}} title="Cambiar de rol">👤</button>}
         <button onClick={()=>logoutFirebase()} className="logout-btn">🚪</button>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,paddingRight:48}}>
           <Avatar photo={currentParent.photo} emoji={parentRole==="father"?"👨":"👩"} size={52} color="#fff"
@@ -1378,15 +1576,16 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData 
         </div>
 
         <div style={{display:"flex",gap:10}}>
-          {["jose","david"].map(id=>{
+          {(Object.keys(st.kids||{})).map((id,i)=>{
             const k=st.kids[id];
+            if(!k) return null;
             const as=approvedStars(k,st.tasks);
-            const pending=Object.values(k.completions).filter(v=>v.done&&!v.approved).length;
-            const kth=TH[id];
+            const pending=Object.values(k.completions||{}).filter(v=>v.done&&!v.approved).length;
+            const kth=getKidColor(id,i);
             return (
               <div key={id} style={{flex:1,background:"rgba(255,255,255,.18)",borderRadius:16,padding:"10px 12px",border:`2px solid rgba(255,255,255,.3)`,minWidth:0}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-                  <Avatar photo={k.photo} emoji={id==="jose"?"👦🏻":"👦"} size={30} color="#fff"/>
+                  <Avatar photo={k.photo} emoji="👦" size={30} color="#fff"/>
                   <div style={{color:"#fff",fontWeight:900,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.name}</div>
                 </div>
                 <div style={{color:"rgba(255,255,255,.9)",fontSize:11,fontWeight:700}}>{getLevel(as).icon} {getLevel(as).name}</div>
@@ -1442,7 +1641,7 @@ const ParentNotifs = memo(function ParentNotifs({ st, dispatch, parentRole }) {
         </p>
       </div>
       {/* Wish notifications from kids */}
-      {["jose","david"].map(id=>st.kids[id].wishlist.filter(w=>!w.approved&&!w.denied).map(w=>(
+      {(Object.keys(st.kids||{})).map(id=>st.kids[id].wishlist.filter(w=>!w.approved&&!w.denied).map(w=>(
         <div key={w.id} className="card" style={{border:"2px solid #FFB80088",background:"#FFFBEA",animation:"slideUp .3s both"}}>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
             <div style={{fontSize:28}}>{w.emoji||"🌟"}</div>
@@ -1464,12 +1663,12 @@ const ParentNotifs = memo(function ParentNotifs({ st, dispatch, parentRole }) {
         const k=st.kids[n.kidId];
         const task=st.tasks.find(t=>t.id===n.taskId);
         const comp=k.completions[n.taskId];
-        const kth=TH[n.kidId];
+        const kth=getKidColor(n.kidId,0);
         const approvedByLabel = comp?.approvedBy ? (comp.approvedBy === "mother" ? "Mamá" : "Papá") : null;
         return (
           <div key={n.id} className="card" style={{border:n.read?`2px solid #f0f0f0`:`2px solid ${kth.p}`,animation:"slideUp .3s both"}}>
             <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-              <Avatar photo={k.photo} emoji={n.kidId==="jose"?"👦🏻":"👦"} size={44} color={kth.p}/>
+              <Avatar photo={k.photo} emoji="👦" size={44} color={kth.p}/>
               <div style={{flex:1}}>
                 <div style={{fontWeight:800,fontSize:14}}>{k.name} completó:</div>
                 <div style={{color:"#555",fontSize:13,fontWeight:600}}>{task?.emoji} {task?.name}</div>
@@ -1510,13 +1709,13 @@ function ParentMensajesYGratitud({ st, dispatch }) {
       <div className="card" style={{marginBottom:12}}>
         <h3 style={{fontWeight:900,marginBottom:4}}>💬 Centro de mensajes</h3>
         <p style={{fontSize:12,color:"#666",marginBottom:14}}>Mensajes enviados a los niños (y motivos de rechazo). Podéis editar o eliminar cualquiera.</p>
-        {["jose","david"].map(id=>{
+        {(Object.keys(st.kids||{})).map((id,i)=>{
           const k=st.kids[id];
           const msgs=[...(k.messages||[])].reverse();
-          const kth=TH[id];
+          const kth=getKidColor(id,i);
           return (
             <div key={id} style={{marginBottom:20}}>
-              <div style={{fontWeight:900,fontSize:13,color:kth.a,marginBottom:8}}>{id==="jose"?"👦🏻 José":"👦 David"}</div>
+              <div style={{fontWeight:900,fontSize:13,color:kth.a,marginBottom:8}}>👦 {k.name||id}</div>
               {msgs.length===0 ? (
                 <div style={{fontSize:12,color:"#aaa",padding:"8px 0"}}>Sin mensajes</div>
               ) : (
@@ -1540,13 +1739,13 @@ function ParentMensajesYGratitud({ st, dispatch }) {
       <div className="card">
         <h3 style={{fontWeight:900,marginBottom:4}}>📝 Gratitud de hoy (niños)</h3>
         <p style={{fontSize:12,color:"#666",marginBottom:14}}>Lo que escriben los niños en su sección de gratitud.</p>
-        {["jose","david"].map(id=>{
+        {(Object.keys(st.kids||{})).map((id,i)=>{
           const k=st.kids[id];
           const grat=[...(k.gratitude||[])].reverse();
-          const kth=TH[id];
+          const kth=getKidColor(id,i);
           return (
             <div key={id} style={{marginBottom:16}}>
-              <div style={{fontWeight:900,fontSize:13,color:kth.a,marginBottom:8}}>{id==="jose"?"👦🏻 José":"👦 David"}</div>
+              <div style={{fontWeight:900,fontSize:13,color:kth.a,marginBottom:8}}>👦 {k.name||id}</div>
               {grat.length===0 ? (
                 <div style={{fontSize:12,color:"#aaa",padding:"8px 0"}}>Aún no ha escrito gratitud</div>
               ) : (
@@ -1623,7 +1822,7 @@ function ParentTareas({ st, dispatch }) {
               <div style={{fontSize:14}}>{l.approved?"✅":"❌"}</div>
               <div style={{flex:1}}>
                 <div style={{fontWeight:700,fontSize:13}}>{l.taskName}</div>
-                <div style={{fontSize:11,color:"#aaa"}}>{l.kidId==="jose"?"José":"David"} · {l.date}{l.approvedBy ? ` · ${l.approvedBy==="mother"?"Mamá":"Papá"} aprobó` : ""}{l.rejectedBy ? ` · ${l.rejectedBy==="mother"?"Mamá":"Papá"} rechazó` : ""}</div>
+                <div style={{fontSize:11,color:"#aaa"}}>{st.kids[l.kidId]?.name||l.kidId} · {l.date}{l.approvedBy ? ` · ${l.approvedBy==="mother"?"Mamá":"Papá"} aprobó` : ""}{l.rejectedBy ? ` · ${l.rejectedBy==="mother"?"Mamá":"Papá"} rechazó` : ""}</div>
               </div>
               {l.approved&&<StarBadge n={l.stars||1}/>}
             </div>
@@ -1636,21 +1835,23 @@ function ParentTareas({ st, dispatch }) {
 
 // ─── PARENT DINERO ──────────────────────────────────────────────
 function ParentDinero({ st, dispatch }) {
-  const [activeKid,setActiveKid]=useState("jose");
-  const kid=st.kids[activeKid];
+  const kidIds=Object.keys(st.kids||{});
+  const [activeKid,setActiveKid]=useState(null);
+  useEffect(()=>{ if(kidIds.length && (activeKid==null||!kidIds.includes(activeKid))) setActiveKid(kidIds[0]); },[kidIds.join(",")]);
+  const kid=activeKid?st.kids[activeKid]:null;
   return (
     <>
       <div style={{display:"flex",gap:8,margin:"12px 0"}}>
-        {["jose","david"].map(id=>(
+        {kidIds.map((id,i)=>(
           <button key={id} onClick={()=>setActiveKid(id)}
-            style={{flex:1,borderRadius:14,padding:10,border:"none",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,background:activeKid===id?TH[id].p:"#f0f0f0",color:activeKid===id?"#fff":"#888",transition:"all .2s"}}>
-            {id==="jose"?"👦🏻 José":"👦 David"}
+            style={{flex:1,borderRadius:14,padding:10,border:"none",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,background:activeKid===id?getKidColor(id,i).p:"#f0f0f0",color:activeKid===id?"#fff":"#888",transition:"all .2s"}}>
+            👦 {st.kids[id]?.name||id}
           </button>
         ))}
       </div>
 
       {/* Wishlist management */}
-      {kid.wishlist.filter(w=>!w.approved&&!w.denied).length>0&&(
+      {kid&&kid.wishlist.filter(w=>!w.approved&&!w.denied).length>0&&(
         <div className="card" style={{border:"2px solid #FFB80066",background:"#FFFBEA",marginBottom:8}}>
           <div style={{fontWeight:900,fontSize:13,marginBottom:8}}>🌠 Deseos pendientes de {kid.name}</div>
           {kid.wishlist.filter(w=>!w.approved&&!w.denied).map(w=>(
@@ -1664,16 +1865,16 @@ function ParentDinero({ st, dispatch }) {
         </div>
       )}
 
-      <MoneyPanel kidId={activeKid} kid={kid} tasks={st.tasks} th={TH[activeKid]} isParent={true} dispatch={dispatch} approvalLog={st.approvalLog}/>
+      {kid&&<MoneyPanel kidId={activeKid} kid={kid} tasks={st.tasks} th={getKidColor(activeKid,kidIds.indexOf(activeKid))} isParent={true} dispatch={dispatch} approvalLog={st.approvalLog}/>}
     </>
   );
 }
 
 // ─── PARENT RANKING ─────────────────────────────────────────────
 function ParentRanking({ st, dispatch }) {
-  const kids=["jose","david"].map(id=>({
+  const kids=(Object.keys(st.kids||{})).map((id,i)=>({
     id, kid:st.kids[id], as:approvedStars(st.kids[id],st.tasks), lv:getLevel(approvedStars(st.kids[id],st.tasks)),
-    euros:totalEuros(st.kids[id],st.tasks), done:Object.values(st.kids[id].completions).filter(v=>v.done).length,
+    euros:totalEuros(st.kids[id],st.tasks), done:Object.values(st.kids[id].completions||{}).filter(v=>v.done).length,
     ach:st.kids[id].achievements.length, streak:st.kids[id].stats.streak||0,
   })).sort((a,b)=>b.as-a.as);
 
@@ -1682,11 +1883,11 @@ function ParentRanking({ st, dispatch }) {
       <div className="card" style={{background:"linear-gradient(135deg,#FFF9E6,#FFFBCC)",border:"2px solid #FFB800",margin:"12px 0 12px"}}>
         <h3 style={{fontWeight:900,color:"#CC8800",marginBottom:14}}>🏆 Clasificación</h3>
         {kids.map((k,i)=>{
-          const kth=TH[k.id]; const maxAs=Math.max(...kids.map(k=>k.as),1);
+          const kth=getKidColor(k.id,i); const maxAs=Math.max(...kids.map(x=>x.as),1);
           return (
             <div key={k.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:i<kids.length-1?16:0}}>
               <div style={{fontSize:28}}>{i===0?"🥇":"🥈"}</div>
-              <Avatar photo={k.kid.photo} emoji={k.id==="jose"?"👦🏻":"👦"} size={44} color={kth.p}/>
+              <Avatar photo={k.kid.photo} emoji="👦" size={44} color={kth.p}/>
               <div style={{flex:1}}>
                 <div style={{fontWeight:900,fontSize:15}}>{k.kid.name} <span style={{fontSize:13}}>{k.lv.icon} {k.lv.name}</span></div>
                 <div style={{fontSize:11,color:"#888",fontWeight:700}}>🏅 {k.ach} logros · 🔥 {k.streak} días · ✅ {k.done} tareas</div>
@@ -1705,29 +1906,33 @@ function ParentRanking({ st, dispatch }) {
       {st.challenges.length>0&&(
         <div className="card">
           <h3 style={{fontWeight:900,marginBottom:12}}>⚔️ Retos activos</h3>
-          {st.challenges.map(c=>(
+          {st.challenges.map(c=>{
+            const ids=Object.keys(st.kids||{});
+            const k1=ids[0], k2=ids[1];
+            const th1=k1?getKidColor(k1,0):TH.parent, th2=k2?getKidColor(k2,1):TH.parent;
+            return (
             <div key={c.id} style={{background:"#f8f8f8",borderRadius:14,padding:12,marginBottom:8}}>
               <div style={{fontWeight:800,fontSize:13,marginBottom:8}}>{c.taskName}</div>
               <div style={{display:"flex",justifyContent:"space-around",alignItems:"center"}}>
-                <div style={{textAlign:"center"}}><div style={{fontSize:28,fontWeight:900,color:TH.jose.p}}>{c.count1}</div><div style={{fontSize:11,color:TH.jose.a,fontWeight:700}}>José</div></div>
+                <div style={{textAlign:"center"}}><div style={{fontSize:28,fontWeight:900,color:th1.p}}>{c.count1}</div><div style={{fontSize:11,color:th1.a,fontWeight:700}}>{st.kids[k1]?.name||k1||"-"}</div></div>
                 <div style={{fontSize:18,color:"#aaa",fontWeight:900}}>VS</div>
-                <div style={{textAlign:"center"}}><div style={{fontSize:28,fontWeight:900,color:TH.david.p}}>{c.count2}</div><div style={{fontSize:11,color:TH.david.a,fontWeight:700}}>David</div></div>
+                <div style={{textAlign:"center"}}><div style={{fontSize:28,fontWeight:900,color:th2.p}}>{c.count2}</div><div style={{fontSize:11,color:th2.a,fontWeight:700}}>{st.kids[k2]?.name||k2||"-"}</div></div>
               </div>
               <div style={{fontSize:11,color:"#aaa",textAlign:"center",marginTop:6}}>Hasta: {c.deadline}</div>
             </div>
-          ))}
+          );})}
         </div>
       )}
 
       {/* Weekly report card */}
       <div className="card" style={{border:"2px solid #FFB80044"}}>
         <h3 style={{fontWeight:900,marginBottom:12}}>📊 Informe semanal</h3>
-        {["jose","david"].map(id=>{
-          const k=st.kids[id]; const kth=TH[id]; const as=approvedStars(k,st.tasks);
+        {(Object.keys(st.kids||{})).map((id,i)=>{
+          const k=st.kids[id]; const kth=getKidColor(id,i); const as=approvedStars(k,st.tasks);
           return (
-            <div key={id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:id==="jose"?"1px solid #f0f0f0":"none"}}>
+            <div key={id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i>0?"1px solid #f0f0f0":"none"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <Avatar photo={k.photo} emoji={id==="jose"?"👦🏻":"👦"} size={36} color={kth.p}/>
+                <Avatar photo={k.photo} emoji="👦" size={36} color={kth.p}/>
                 <div>
                   <div style={{fontWeight:800,fontSize:13}}>{k.name}</div>
                   <div style={{fontSize:11,color:"#888"}}>{k.achievements.length} logros · {k.stats.totalDone||0} tareas</div>
@@ -1743,7 +1948,7 @@ function ParentRanking({ st, dispatch }) {
         <button onClick={()=>{
           const w=window.open("","_blank","width=800,height=600");
           if(!w) { dispatch?.({type:"TOAST",msg:"Permite ventanas emergentes para exportar"}); return; }
-          const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Informe Kids Goals</title><style>body{font-family:sans-serif;padding:24px;max-width:600px;margin:0 auto}h1{color:#2D5010}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;border-bottom:1px solid #eee}.r{text-align:right}</style></head><body><h1>📊 Informe semanal Kids Goals</h1><p><small>${new Date().toLocaleDateString("es-ES",{day:"2-digit",month:"long",year:"numeric"})}</small></p><table><thead><tr><th>Niño</th><th>Estrellas</th><th class="r">Euros</th><th class="r">Logros</th><th class="r">Tareas</th></tr></thead><tbody>${["jose","david"].map(id=>{const k=st.kids[id];const as=approvedStars(k,st.tasks);return `<tr><td><strong>${k.name}</strong></td><td>${as}⭐</td><td class="r">${totalEuros(k,st.tasks)}€</td><td class="r">${k.achievements.length}</td><td class="r">${k.stats.totalDone||0}</td></tr>`}).join("")}</tbody></table><p style="margin-top:24px;color:#888;font-size:12px">Kids Goals — Informe generado automáticamente</p></body></html>`;
+          const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Informe Kids Goals</title><style>body{font-family:sans-serif;padding:24px;max-width:600px;margin:0 auto}h1{color:#2D5010}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;border-bottom:1px solid #eee}.r{text-align:right}</style></head><body><h1>📊 Informe semanal Kids Goals</h1><p><small>${new Date().toLocaleDateString("es-ES",{day:"2-digit",month:"long",year:"numeric"})}</small></p><table><thead><tr><th>Niño</th><th>Estrellas</th><th class="r">Euros</th><th class="r">Logros</th><th class="r">Tareas</th></tr></thead><tbody>${(Object.keys(st.kids||{})).map(id=>{const k=st.kids[id];const as=approvedStars(k,st.tasks);return `<tr><td><strong>${k.name}</strong></td><td>${as}⭐</td><td class="r">${totalEuros(k,st.tasks)}€</td><td class="r">${k.achievements.length}</td><td class="r">${k.stats.totalDone||0}</td></tr>`}).join("")}</tbody></table><p style="margin-top:24px;color:#888;font-size:12px">Kids Goals — Informe generado automáticamente</p></body></html>`;
           w.document.write(html);
           w.document.close();
           w.focus();
@@ -1757,15 +1962,17 @@ function ParentRanking({ st, dispatch }) {
 }
 
 function ParentHistory({ st }) {
-  const [kidId,setKidId]=useState("jose");
-  const kid=st.kids[kidId];
-  const th=TH[kidId]||TH.jose;
-  const allActivity=kid.activityLog||{};
+  const kidIds=Object.keys(st.kids||{});
+  const [kidId,setKidId]=useState(null);
+  useEffect(()=>{ if(kidIds.length && (kidId==null||!kidIds.includes(kidId))) setKidId(kidIds[0]); },[kidIds.join(",")]);
+  const kid=kidId?st.kids[kidId]:null;
+  const th=kidId?getKidColor(kidId,kidIds.indexOf(kidId)):TH.parent;
+  const allActivity=kid?.activityLog||{};
   const months=Array.from(new Set(Object.keys(allActivity).map(d=>d.slice(0,7)))).sort((a,b)=>b.localeCompare(a));
   const todayMonth=new Date().toISOString().slice(0,7);
   const [month,setMonth]=useState(months[0]||todayMonth);
   const [filter,setFilter]=useState("all");
-  const as=approvedStars(kid,st.tasks);
+  const as=kid?approvedStars(kid,st.tasks):0;
   const lv=getLevel(as);
   const nextLv=getNextLevel(as);
   const monthEntries=Object.entries(allActivity).filter(([d])=>d.startsWith(month));
@@ -1782,14 +1989,14 @@ function ParentHistory({ st }) {
   return (
     <>
       <div style={{display:"flex",gap:8,margin:"12px 0"}}>
-        {["jose","david"].map(id=>(
+        {kidIds.map((id,i)=>(
           <button key={id} onClick={()=>setKidId(id)}
-            style={{flex:1,borderRadius:14,padding:10,border:"none",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,background:kidId===id?TH[id].p:"#f0f0f0",color:kidId===id?"#fff":"#888",transition:"all .2s"}}>
-            {id==="jose"?"👦🏻 José":"👦 David"}
+            style={{flex:1,borderRadius:14,padding:10,border:"none",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,background:kidId===id?getKidColor(id,i).p:"#f0f0f0",color:kidId===id?"#fff":"#888",transition:"all .2s"}}>
+            👦 {st.kids[id]?.name||id}
           </button>
         ))}
       </div>
-      <div className="card" style={{marginBottom:10}}>
+      {kid&&(<><div className="card" style={{marginBottom:10}}>
         <h3 style={{fontWeight:900,marginBottom:6}}>📊 Resumen de progreso</h3>
         <div style={{fontSize:13,color:"#555",marginBottom:8}}>
           Nivel actual: <strong>{lv.icon} {lv.name}</strong> · Estrellas totales: <strong>{as}⭐</strong>{nextLv?` · Faltan ${nextLv.min-as}⭐ para ${nextLv.name}`:""}<br/>
@@ -1814,19 +2021,20 @@ function ParentHistory({ st }) {
         </div>
       </div>
       <KidHistory kid={kid} th={th} filter={filter} month={month}/>
+      </>)}
     </>
   );
 }
 
 // ─── PARENT CONFIG ──────────────────────────────────────────────
 function KidEditor({ id, kid, dispatch }) {
-  const [name,setName]=useState(kid.name||(id==="jose"?"José":"David"));
-  const [dob,setDob]=useState(kid.dob||"");
-  const [grade,setGrade]=useState(kid.profile?.grade||"");
-  const [strengths,setStrengths]=useState(kid.profile?.strengths||"");
-  const [focusAreas,setFocusAreas]=useState(kid.profile?.focusAreas||"");
+  const [name,setName]=useState(kid?.name||"");
+  const [dob,setDob]=useState(kid?.dob||"");
+  const [grade,setGrade]=useState(kid?.profile?.grade||"");
+  const [strengths,setStrengths]=useState(kid?.profile?.strengths||"");
+  const [focusAreas,setFocusAreas]=useState(kid?.profile?.focusAreas||"");
   const [edit,setEdit]=useState(false);
-  const th=TH[id]; const age=calcAge(dob);
+  const th=getKidColor(id,0); const age=calcAge(dob);
   function save() {
     dispatch({type:"SET_KID_INFO",kidId:id,name,dob,grade,strengths,focusAreas});
     setEdit(false);
@@ -1835,12 +2043,12 @@ function KidEditor({ id, kid, dispatch }) {
   return (
     <div style={{padding:"12px 0",borderBottom:"1px solid #f0f0f0"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <Avatar photo={kid.photo} emoji={id==="jose"?"👦🏻":"👦"} size={52} color={th.p}
+        <Avatar photo={kid?.photo} emoji="👦" size={52} color={th.p}
           onClick={ph=>dispatch({type:"SET_KID_PHOTO",kidId:id,photo:ph})}/>
         <div style={{flex:1}}>
           {!edit?(
             <>
-              <div style={{fontWeight:900,fontSize:16}}>{kid.name||(id==="jose"?"José":"David")}</div>
+              <div style={{fontWeight:900,fontSize:16}}>{kid?.name||name||id}</div>
               <div style={{fontSize:12,color:"#888",fontWeight:600}}>{dob?`🎂 ${age} años · ${fmt(dob)}`:"Sin fecha de nacimiento"}</div>
               {(kid.profile?.grade||grade) && <div style={{fontSize:12,color:"#666",fontWeight:600,marginTop:2}}>🎓 {(kid.profile?.grade||grade)}</div>}
               {(kid.profile?.strengths||kid.profile?.focusAreas) && (
@@ -1893,7 +2101,7 @@ function ParentConfig({ st, dispatch, parentRole, currentParent }) {
           </div>
         </div>
         {/* Kids */}
-        {["jose","david"].map(id=><KidEditor key={id} id={id} kid={st.kids[id]} dispatch={dispatch}/>)}
+        {(Object.keys(st.kids||{})).map(id=><KidEditor key={id} id={id} kid={st.kids[id]} dispatch={dispatch}/>)}
       </div>
 
       {!FCM_VAPID_KEY&&(
@@ -1907,10 +2115,10 @@ function ParentConfig({ st, dispatch, parentRole, currentParent }) {
       <div className="card">
         <h3 style={{fontWeight:900,marginBottom:12}}>💬 Enviar mensaje de ánimo</h3>
         <div style={{display:"flex",gap:8,marginBottom:10}}>
-          {["jose","david"].map(id=>(
+          {(Object.keys(st.kids||{})).map((id,i)=>(
             <button key={id} onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"sendMsg",kidId:id}})}
-              style={{flex:1,background:`linear-gradient(135deg,${TH[id].p},${TH[id].a})`,color:"#fff",border:"none",borderRadius:14,padding:"10px",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:13,cursor:"pointer"}}>
-              {id==="jose"?"👦🏻 José":"👦 David"}
+              style={{flex:1,background:`linear-gradient(135deg,${getKidColor(id,i).p},${getKidColor(id,i).a})`,color:"#fff",border:"none",borderRadius:14,padding:"10px",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:13,cursor:"pointer"}}>
+              👦 {st.kids[id]?.name||id}
             </button>
           ))}
         </div>
@@ -2222,7 +2430,7 @@ function ChallengeModal({ m, st, dispatch }) {
         <label style={{fontWeight:700,fontSize:12,color:"#777",display:"block",marginBottom:4}}>📅 Fecha límite</label>
         <input type="date" value={deadline||defDeadline} onChange={e=>setDeadline(e.target.value)} style={{width:"100%",padding:"11px 14px",borderRadius:14,border:"2px solid #f0f0f0",fontSize:14}}/>
       </div>
-      <button onClick={()=>dispatch({type:"ADD_CHALLENGE",challenge:{kid1:"jose",kid2:"david",taskId,taskName:st.tasks.find(t=>t.id===taskId)?.name,count1:0,count2:0,deadline:deadline||defDeadline}})}
+      <button onClick={()=>{const ids=Object.keys(st.kids||{}); dispatch({type:"ADD_CHALLENGE",challenge:{kid1:ids[0]||"",kid2:ids[1]||ids[0]||"",taskId,taskName:st.tasks.find(t=>t.id===taskId)?.name,count1:0,count2:0,deadline:deadline||defDeadline}})}}
         style={{width:"100%",background:"linear-gradient(135deg,#FF6B35,#CC4400)",color:"#fff",border:"none",borderRadius:20,padding:16,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,cursor:"pointer"}}>
         ⚔️ ¡Activar reto!
       </button>
@@ -2245,11 +2453,13 @@ export default function App() {
   const [appLoading, setAppLoading] = useState(true);
   const fcmSwReg = useRef(null);
 
+  const familyId = roleData?.familyId || st?.loggedAccount?.familyId;
   const dispatch = useCallback((action) => {
     const mustSaveNow = ["ADD_TASK", "EDIT_TASK", "DELETE_TASK"].includes(action?.type);
     rawDispatch(prev => {
       const next = reducer(prev, action);
-      if (mustSaveNow && authUser && roleData) saveAppState(next).catch(console.error);
+      const fid = next.loggedAccount?.familyId || roleData?.familyId;
+      if (mustSaveNow && authUser && fid) saveAppState(fid, next).catch(console.error);
       return next;
     });
   }, [authUser, roleData]);
@@ -2261,14 +2471,15 @@ export default function App() {
 
   // Debounced save to Firestore (500ms after last action)
   const debouncedSave = useCallback(debounce((state) => {
-    saveAppState(state).catch(console.error);
+    const fid = state.loggedAccount?.familyId || roleData?.familyId;
+    if (fid) saveAppState(fid, state).catch(console.error);
   }, 500), []);
 
   // Save to Firestore whenever state changes (skip initial load)
   const isFirstRender = useRef(true);
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
-    if (authUser && roleData) debouncedSave(st);
+    if (authUser && roleData && familyId) debouncedSave(st);
   }, [st]);
 
   // Guardar foto del padre/madre en la nube (merge por rol para no sobrescribir el otro)
@@ -2276,12 +2487,11 @@ export default function App() {
   const currentParentForSave = parentRoleForSave ? st.parents?.[parentRoleForSave] : null;
   const lastParentPhoto = useRef(currentParentForSave?.photo);
   useEffect(() => {
-    if (!authUser || !parentRoleForSave || !currentParentForSave?.photo) return;
+    if (!familyId || !parentRoleForSave || !currentParentForSave?.photo) return;
     if (currentParentForSave.photo === lastParentPhoto.current) return;
     lastParentPhoto.current = currentParentForSave.photo;
-    // Sin toast en cada arranque: solo sincronizamos silenciosamente
-    saveParentPhoto(parentRoleForSave, currentParentForSave).catch(console.error);
-  }, [currentParentForSave?.photo, authUser, parentRoleForSave]);
+    saveParentPhoto(familyId, parentRoleForSave, currentParentForSave).catch(console.error);
+  }, [currentParentForSave?.photo, authUser, parentRoleForSave, familyId]);
 
   // Firebase auth listener
   useEffect(() => {
@@ -2293,36 +2503,48 @@ export default function App() {
         rawDispatch(() => ({ ...initState(), screen: "auth" }));
         return;
       }
-      // User is logged in — get their role (o asignar rol fijo por email)
       try {
         let role = await getUserRole(user.uid);
-        if (!role && user.email && FIXED_PARENT_EMAILS[user.email]) {
-          role = { role: FIXED_PARENT_EMAILS[user.email], kidId: null, name: user.displayName, email: user.email, photo: user.photoURL };
-          await setUserRole(user.uid, role);
+        if (role && !role.familyId) {
+          role = { ...role, familyId: user.uid };
+          await setUserRole(user.uid, { familyId: user.uid });
+        }
+        if (!role && user.email) {
+          const linkData = await getFamilyByEmail(user.email);
+          if (linkData) {
+            setRoleData({ ...linkData, email: user.email, photo: user.photoURL, name: user.displayName });
+            rawDispatch(prev => ({ ...prev, screen: "linkAccount", linkEmail: user.email, linkData, linkUid: user.uid }));
+            setAppLoading(false);
+            return;
+          }
         }
         if (!role) {
           setRoleData(null);
+          rawDispatch(prev => ({ ...prev, screen: "onboarding", onboardingStep: 1 }));
           setAppLoading(false);
           return;
         }
         setRoleData(role);
-        // Load saved app state from Firestore
-        const saved = await loadAppState();
+        const fid = role.familyId || user.uid;
+        const saved = await loadAppState(fid);
         const isParent = role.role === "parent" || role.role === "father" || role.role === "mother";
+        const base = { ...role, uid: user.uid, googlePhoto: user.photoURL, familyId: fid };
         if (saved) {
           rawDispatch(() => ({
             ...initState(),
             ...saved,
-            screen: isParent ? "parent" : "child",
+            screen: "whoIsUsing",
             activeKid: role.kidId || null,
-            loggedAccount: { ...role, uid: user.uid, googlePhoto: user.photoURL },
+            actingAs: isParent ? { role: role.role } : { role: "child", kidId: role.kidId },
+            loggedAccount: base,
           }));
         } else {
           rawDispatch(prev => ({
             ...prev,
-            screen: isParent ? "parent" : "child",
+            screen: "whoIsUsing",
             activeKid: role.kidId || null,
-            loggedAccount: { ...role, uid: user.uid, googlePhoto: user.photoURL },
+            actingAs: isParent ? { role: role.role } : { role: "child", kidId: role.kidId },
+            loggedAccount: base,
           }));
         }
       } catch(e) {
@@ -2333,13 +2555,12 @@ export default function App() {
     return unsub;
   }, []);
 
-  // Al volver a la app (dejar de estar minimizada), recargar datos para ver mensajes/actualizaciones
   useEffect(() => {
-    if (!authUser || !roleData) return;
+    if (!authUser || !familyId) return;
     const onVisible = async () => {
       if (typeof document === "undefined" || document.visibilityState !== "visible") return;
       try {
-        const saved = await loadAppState();
+        const saved = await loadAppState(familyId);
         if (saved) {
           rawDispatch(prev => ({
             ...prev,
@@ -2350,6 +2571,7 @@ export default function App() {
             confetti: prev.confetti,
             loggedAccount: prev.loggedAccount,
             activeKid: prev.activeKid,
+            actingAs: prev.actingAs,
           }));
         }
       } catch (e) {
@@ -2358,12 +2580,11 @@ export default function App() {
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [authUser, roleData]);
+  }, [authUser, familyId]);
 
-  // Subscribe to real-time updates from Firestore (so all devices sync)
   useEffect(() => {
-    if (!authUser || !roleData) return;
-    const unsub = subscribeAppState((data) => {
+    if (!authUser || !familyId) return;
+    const unsub = subscribeAppState(familyId, (data) => {
       let merged = { ...data };
       if (!Array.isArray(merged.tasks) || merged.tasks.length === 0) merged.tasks = INIT_TASKS;
       if (data.parent && !data.parents) {
@@ -2385,12 +2606,11 @@ export default function App() {
       }));
     });
     return unsub;
-  }, [authUser, roleData]);
+  }, [authUser, familyId]);
 
-  // Notificaciones push: el permiso debe pedirse con un gesto del usuario (tap). Cada padre/madre guarda su token.
-  const parentRoleForFcm = (roleData?.role === "mother" || roleData?.role === "father") ? roleData.role : "father";
+  const parentRoleForFcm = (st.actingAs?.role === "mother" || st.actingAs?.role === "father") ? st.actingAs.role : "father";
   const requestParentNotif = useCallback(async () => {
-    if (typeof window === "undefined" || !FCM_VAPID_KEY) return;
+    if (typeof window === "undefined" || !FCM_VAPID_KEY || !familyId) return;
     try {
       const permission = await Notification.requestPermission();
       if (permission !== "granted") return;
@@ -2400,7 +2620,7 @@ export default function App() {
         ...(fcmSwReg.current ? { serviceWorkerRegistration: fcmSwReg.current } : {}),
       });
       if (!token) return;
-      await setParentFcmToken(parentRoleForFcm, token);
+      await setParentFcmToken(familyId, parentRoleForFcm, token);
       rawDispatch(prev => ({ ...prev, parentFcmTokens: { ...(prev.parentFcmTokens||{}), [parentRoleForFcm]: token } }));
       dispatch({ type: "TOAST", msg: "🔔 Notificaciones activadas" });
       onMessage(messaging, (payload) => {
@@ -2409,12 +2629,11 @@ export default function App() {
     } catch (e) {
       if (e?.code !== "messaging/permission-blocked") console.warn("FCM:", e?.message || e);
     }
-  }, [parentRoleForFcm]);
+  }, [parentRoleForFcm, familyId]);
 
-  // Notificaciones push para el niño (gesto del usuario requerido)
-  const childKidId = roleData?.role === "child" ? (roleData?.kidId || st.activeKid) : null;
+  const childKidId = st.actingAs?.role === "child" ? (st.actingAs?.kidId || st.activeKid) : null;
   const requestChildNotif = useCallback(async () => {
-    if (typeof window === "undefined" || !childKidId || !FCM_VAPID_KEY) return;
+    if (typeof window === "undefined" || !childKidId || !FCM_VAPID_KEY || !familyId) return;
     try {
       const permission = await Notification.requestPermission();
       if (permission !== "granted") return;
@@ -2424,7 +2643,7 @@ export default function App() {
         ...(fcmSwReg.current ? { serviceWorkerRegistration: fcmSwReg.current } : {}),
       });
       if (!token) return;
-      await setChildFcmToken(childKidId, token);
+      await setChildFcmToken(familyId, childKidId, token);
       dispatch({ type: "TOAST", msg: "🔔 Notificaciones activadas" });
       onMessage(messaging, (payload) => {
         if (payload?.notification?.title) dispatch({ type: "TOAST", msg: payload.notification.title + (payload.notification.body ? " — " + payload.notification.body : "") });
@@ -2460,14 +2679,11 @@ export default function App() {
         {st.confetti&&<Confetti/>}
 
         {!authUser && <AuthScreen/>}
-        {authUser && !roleData && (
-          <RoleScreen user={authUser} onRole={(r)=>{ setRoleData(r);
-            rawDispatch(prev=>({...prev, screen:(r.role==="parent"||r.role==="father"||r.role==="mother")?"parent":"child", activeKid:r.kidId||null,
-              loggedAccount:{...r, uid:authUser.uid, googlePhoto:authUser.photoURL}}));
-          }}/>
-        )}
-        {authUser && roleData && st.screen==="child"  && <ChildScreen st={st} dispatch={dispatch} onRequestNotif={requestChildNotif} showNotifPrompt={!!childKidId&&!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"} roleData={roleData}/>}
-        {authUser && roleData && st.screen==="parent" && <ParentScreen st={st} dispatch={dispatch} onRequestNotif={requestParentNotif} showNotifPrompt={!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"} roleData={roleData}/>}
+        {authUser && st.screen==="linkAccount" && <LinkAccountScreen st={st} dispatch={dispatch} linkUid={st.linkUid} linkEmail={st.linkEmail} linkData={st.linkData} setRoleData={setRoleData} authUser={authUser}/>}
+        {authUser && st.screen==="onboarding" && <OnboardingWizard st={st} dispatch={dispatch} authUser={authUser} setRoleData={setRoleData} setAppLoading={setAppLoading}/>}
+        {authUser && roleData && st.screen==="whoIsUsing" && <WhoIsUsingScreen st={st} dispatch={dispatch} roleData={roleData}/>}
+        {authUser && roleData && st.screen==="child"  && <ChildScreen st={st} dispatch={dispatch} onRequestNotif={requestChildNotif} showNotifPrompt={!!childKidId&&!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"} roleData={roleData} onSwitchRole={()=>dispatch({type:"SET_ACTING_AS",actingAs:null,screen:"whoIsUsing"})}/>}
+        {authUser && roleData && st.screen==="parent" && <ParentScreen st={st} dispatch={dispatch} onRequestNotif={requestParentNotif} showNotifPrompt={!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"} roleData={roleData} onSwitchRole={()=>dispatch({type:"SET_ACTING_AS",actingAs:null,screen:"whoIsUsing"})}/>}
 
         <Modal st={st} dispatch={dispatch} roleData={roleData}/>
       </div>
