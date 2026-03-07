@@ -419,7 +419,8 @@ const CSS = `
 *{margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{background:var(--kg-bg);-webkit-text-size-adjust:100%}
 
-/* App shell — responsive: móvil 100%, tablet/desktop centrado con ancho máximo fluido */
+/* App shell — responsive: móvil 100%, tablet/desktop centrado con ancho máximo fluido.
+   En escritorio el scroll puede hacerse en #root (index.css) o dentro de .scroll-body. */
 .app{
   width:100%;
   max-width:var(--kg-app-max);
@@ -428,28 +429,24 @@ body{background:var(--kg-bg);-webkit-text-size-adjust:100%}
   margin:0 auto;
   background:var(--kg-surface);
   position:relative;
-  overflow:hidden;
+  overflow-x:hidden;
   display:flex;
   flex-direction:column;
   box-shadow:0 0 3.75rem rgba(0,0,0,.08);
 }
 
 .screen{
-  flex:1;
+  flex:0 0 auto;
   display:flex;
   flex-direction:column;
-  min-height:0;
-  overflow:hidden;
   width:100%;
 }
 
 .scroll-body{
-  flex:1;
-  min-height:0;
-  overflow-y:auto;
+  flex:0 0 auto;
+  overflow-y:visible;
   overflow-x:hidden;
   -webkit-overflow-scrolling:touch;
-  overscroll-behavior-y:contain;
   padding:0.75rem 1rem;
   padding-bottom:calc(5.5rem + env(safe-area-inset-bottom,0px));
   width:100%;
@@ -1153,8 +1150,10 @@ function TaskCard({ task, comp, kidId, th, dispatch, idx, mult }) {
             </button>
           )}
         </div>
-        <div style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:44,flexShrink:0}}>
-          <StarBadge n={effStars}/>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",width:rem(52),minWidth:rem(52),flexShrink:0}}>
+          <div style={{display:"flex",justifyContent:"center",minHeight:rem(24),alignItems:"center"}}>
+            <StarBadge n={effStars}/>
+          </div>
           {mult>1&&!done&&<div style={{fontSize:8,color:PALETTE.error,fontWeight:900}}>x{mult}⚡</div>}
           <div style={{height:36,display:"flex",alignItems:"center",justifyContent:"center",marginTop:4}}>
             {!done
