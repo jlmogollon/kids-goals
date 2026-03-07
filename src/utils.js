@@ -1,4 +1,4 @@
-import { ACHIEV, INIT_TASKS, STARS_PER_EURO } from "./constants";
+import { ACHIEV, INIT_TASKS, STARS_PER_EURO, LEVELS } from "./constants";
 
 export function getTodayIdx() {
   const d = new Date().getDay();
@@ -32,13 +32,18 @@ export function calcAge(dob) {
 }
 
 export function getLevel(stars) {
-  // LEVELS se importa donde se use; aquí solo calculamos con ACHIEV si hace falta
-  // pero en la app se sigue usando la versión original.
-  return stars;
+  let current = LEVELS[0];
+  for (const lv of LEVELS) {
+    if (stars >= lv.min) current = lv;
+  }
+  return current;
 }
 
 export function getNextLevel(stars) {
-  return stars;
+  const idx = LEVELS.findIndex((lv) => stars < lv.min);
+  if (idx <= 0) return LEVELS[1] ?? null;
+  if (idx === -1) return null; // ya en el último nivel
+  return LEVELS[idx];
 }
 
 export function getStreakMult(streak) {
@@ -70,17 +75,42 @@ export function isToday(dateStr) {
   );
 }
 
+/** Estrellas totales aprobadas (acumuladas). Usa approvedCompletions si existe. */
 export function approvedStars(kid, tasks) {
+  if (Array.isArray(kid.approvedCompletions) && kid.approvedCompletions.length > 0) {
+    return kid.approvedCompletions.reduce((a, c) => a + (c.stars || 0), 0) + (kid.bonusStars || 0);
+  }
+  // Migración: datos antiguos sin approvedCompletions
   return (
-    Object.entries(kid.completions)
+    Object.entries(kid.completions || {})
       .filter(([, v]) => v.approved)
       .reduce((a, [tid, v]) => {
         const t = tasks.find((t) => t.id === parseInt(tid));
         const base = t?.stars || 0;
         const mult = v?.mult && v.mult > 1 ? v.mult : 1;
         return a + Math.ceil(base * mult);
-      }, 0) + kid.bonusStars
+      }, 0) + (kid.bonusStars || 0)
   );
+}
+
+/** Racha actual: días consecutivos (hacia atrás desde hoy) con al menos una tarea aprobada. */
+export function computeStreak(kid) {
+  const list = kid.approvedCompletions;
+  if (!Array.isArray(list) || list.length === 0) return 0;
+  const today = new Date().toISOString().slice(0, 10);
+  const dates = [...new Set(list.map((c) => (c.date || "").slice(0, 10)).filter(Boolean))].sort(
+    (a, b) => b.localeCompare(a)
+  );
+  if (dates.length === 0) return 0;
+  let streak = 0;
+  const oneDay = 24 * 60 * 60 * 1000;
+  let check = new Date(today);
+  const checkStr = () => check.toISOString().slice(0, 10);
+  while (dates.includes(checkStr())) {
+    streak++;
+    check = new Date(check.getTime() - oneDay);
+  }
+  return streak;
 }
 
 export function availableStars(kid, tasks) {
@@ -125,7 +155,8 @@ export function mkKid(name, dob) {
     name,
     dob,
     photo: null,
-    completions: {},   // taskId -> { done, approved, evidence, date, photoUrl }
+    completions: {},   // taskId -> última completion (done/approved) para la UI
+    approvedCompletions: [], // { taskId, date, stars } — historial para acumular estrellas y racha
     achievements: [],
     bonusStars: 0,
     spentStars: 0,     // stars spent on privileges

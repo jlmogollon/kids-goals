@@ -61,6 +61,38 @@ async function loadAppState() {
     d.parentFcmTokens={ father: d.parentFcmToken, mother: d.parentFcmToken };
     delete d.parentFcmToken;
   }
+  // Migrar kids: approvedCompletions y racha (streak)
+  const tasks = d.tasks || INIT_TASKS;
+  if (d.kids && typeof d.kids === "object") {
+    const today = new Date().toISOString().slice(0, 10);
+    d.kids = Object.fromEntries(
+      Object.entries(d.kids).map(([id, kid]) => {
+        let approvedCompletions = kid.approvedCompletions;
+        if (!Array.isArray(approvedCompletions) || approvedCompletions.length === 0) {
+          approvedCompletions = [];
+          const log = kid.activityLog || {};
+          for (const [dateKey, entries] of Object.entries(log)) {
+            if (!Array.isArray(entries)) continue;
+            for (const e of entries) {
+              if (e.type === "taskApproved" && e.taskId != null && e.stars != null)
+                approvedCompletions.push({ taskId: e.taskId, date: dateKey.slice(0, 10), stars: e.stars });
+            }
+          }
+          if (approvedCompletions.length === 0 && kid.completions) {
+            for (const [tid, v] of Object.entries(kid.completions)) {
+              if (v.approved) {
+                const t = tasks.find((t) => t.id === parseInt(tid));
+                const stars = Math.ceil((t?.stars || 0) * (v.mult > 1 ? v.mult : 1));
+                approvedCompletions.push({ taskId: parseInt(tid), date: (v.date || "").slice(0, 10) || today, stars });
+              }
+            }
+          }
+        }
+        const streak = computeStreak({ ...kid, approvedCompletions });
+        return [id, { ...kid, approvedCompletions, stats: { ...(kid.stats || {}), streak } }];
+      })
+    );
+  }
   return d;
 }
 async function saveAppState(state)   {
@@ -82,8 +114,8 @@ async function setChildFcmToken(kidId, token) {
 }
 function subscribeAppState(cb) { return onSnapshot(doc(db,"appData","main"),(s)=>{ if(s.exists()) cb(s.data()); }); }
 
-import { TH, PALETTE, FIXED_PARENT_EMAILS, CAT_CLR, STARS_PER_EURO, LEVELS, DAY_LABELS, DAY_SHORT, DAY_FULL, DEMO_ACCOUNTS, ACHIEV, PRIVILEGES, INIT_TASKS } from "./constants";
-import { getTodayIdx, taskActiveOn, taskActiveToday, calcAge, getLevel, getNextLevel, getStreakMult, fmt, isToday, approvedStars, availableStars, pendingStars, totalEuros, paidOut, balance, kidName, checkNewAchievements, mkKid, initState } from "./utils";
+import { TH, PALETTE, FIXED_PARENT_EMAILS, CAT_CLR, STARS_PER_EURO, DAY_LABELS, DAY_FULL, ACHIEV, PRIVILEGES, INIT_TASKS } from "./constants";
+import { getTodayIdx, taskActiveOn, taskActiveToday, calcAge, getLevel, getNextLevel, getStreakMult, fmt, isToday, approvedStars, availableStars, pendingStars, totalEuros, paidOut, balance, kidName, checkNewAchievements, computeStreak, mkKid, initState } from "./utils";
 
 // ═══════════════════════════════════════════════════════════════════════
 // INITIAL TASKS
@@ -164,7 +196,14 @@ function reducer(st, a) {
       const comp = { ...st.kids[kidId].completions[taskId], approved:true, evidence:null, photoUrl:null, approvedBy: approvedBy||"parent" };
       const effStars = Math.ceil((task?.stars||0) * (comp.mult && comp.mult>1 ? comp.mult : 1));
       const kidPrev = st.kids[kidId];
-      let kid = { ...kidPrev, completions:{ ...kidPrev.completions, [taskId]:comp } };
+      const dateKey = new Date().toISOString().slice(0,10);
+      const approvedCompletions = [...(kidPrev.approvedCompletions||[]), { taskId, date: dateKey, stars: effStars }];
+      let kid = {
+        ...kidPrev,
+        completions:{ ...kidPrev.completions, [taskId]:comp },
+        approvedCompletions,
+        stats:{ ...kidPrev.stats, streak: computeStreak({ ...kidPrev, approvedCompletions }) },
+      };
       // Add encouragement message if provided
       if(message) kid = { ...kid, messages:[{ id:Date.now(), from:"parent", text:message, date:new Date().toLocaleTimeString("es-ES"), read:false },...kid.messages] };
       // Check achievements
@@ -175,7 +214,6 @@ function reducer(st, a) {
         kid={ ...kid, achievements:[...kid.achievements,...newAch.map(a=>a.id)], bonusStars:kid.bonusStars+bonusAdded };
         achToast=` 🏅 ¡${newAch[0].label}! +${bonusAdded}⭐`;
       }
-      const dateKey = new Date().toISOString().slice(0,10);
       const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
       const dayLog = kid.activityLog?.[dateKey] || [];
       const entry = { id:Date.now(), type:"taskApproved", taskId, taskName:task?.name, stars:effStars, time };
