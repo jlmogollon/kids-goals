@@ -44,14 +44,8 @@ async function loadAppState() {
   const s=await getDoc(doc(db,"appData","main"));
   if(!s.exists()) return null;
   const d=s.data();
-  // Asegurar que siempre tenemos las tareas iniciales más nuevas
-  if (Array.isArray(d.tasks) && d.tasks.length>0) {
-    const existingIds = new Set(d.tasks.map(t=>t.id));
-    const extra = INIT_TASKS.filter(t=>!existingIds.has(t.id));
-    if (extra.length>0) d.tasks = [...d.tasks, ...extra];
-  } else {
-    d.tasks = INIT_TASKS;
-  }
+  // Usar lista guardada como fuente de verdad. Solo usar INIT_TASKS si no hay tareas (primera vez).
+  if (!Array.isArray(d.tasks) || d.tasks.length === 0) d.tasks = INIT_TASKS;
   // Migrar parent antiguo → parents
   if(d.parent && !d.parents) {
     d.parents={ father: { ...d.parent, name: d.parent.name||"Papá" }, mother: { ...d.parent, name: d.parent.name||"Mamá" } };
@@ -117,9 +111,8 @@ function subscribeAppState(cb) { return onSnapshot(doc(db,"appData","main"),(s)=
 import { TH, PALETTE, FIXED_PARENT_EMAILS, CAT_CLR, STARS_PER_EURO, DAY_LABELS, DAY_FULL, ACHIEV, PRIVILEGES, INIT_TASKS } from "./constants";
 import { getTodayIdx, taskActiveOn, taskActiveToday, calcAge, getLevel, getNextLevel, getStreakMult, fmt, isToday, approvedStars, availableStars, pendingStars, totalEuros, paidOut, balance, kidName, checkNewAchievements, computeStreak, mkKid, initState } from "./utils";
 
-// ═══════════════════════════════════════════════════════════════════════
-// INITIAL TASKS
-// ═══════════════════════════════════════════════════════════════════════
+// Escala en rem para que tipografía y espaciado sigan el tamaño base responsive (index.css)
+const rem = (px) => `${Number(px) / 16}rem`;
 
 // ═══════════════════════════════════════════════════════════════════════
 // REDUCER
@@ -402,15 +395,15 @@ const CSS = `
   --kg-border:#e8e8e8;
   --kg-border-light:#f0f0f0;
   --kg-overlay:rgba(0,0,0,.5);
+  --kg-app-max: min(100%, 32rem);
 }
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html{height:100%;width:100%;overflow-x:hidden}
-body{min-height:100%;min-height:100dvh;width:100%;background:var(--kg-bg);font-family:'Nunito',sans-serif;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;overflow-x:hidden}
-#root{min-height:100%;min-height:100dvh;width:100%}
+*{margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--kg-bg);-webkit-text-size-adjust:100%}
 
-/* App shell — full width on mobile, centered card on desktop */
+/* App shell — responsive: móvil 100%, tablet/desktop centrado con ancho máximo fluido */
 .app{
   width:100%;
+  max-width:var(--kg-app-max);
   min-height:100vh;
   min-height:100dvh;
   margin:0 auto;
@@ -419,15 +412,9 @@ body{min-height:100%;min-height:100dvh;width:100%;background:var(--kg-bg);font-f
   overflow:hidden;
   display:flex;
   flex-direction:column;
-}
-@media (min-width:431px){
-  .app{ max-width:430px; box-shadow:0 0 60px rgba(0,0,0,.12); }
-}
-@media (max-width:430px){
-  .app{ max-width:none; margin:0; }
+  box-shadow:0 0 3.75rem rgba(0,0,0,.08);
 }
 
-/* Every screen = flex column that fills the app shell */
 .screen{
   flex:1;
   display:flex;
@@ -437,7 +424,6 @@ body{min-height:100%;min-height:100dvh;width:100%;background:var(--kg-bg);font-f
   width:100%;
 }
 
-/* Scrollable body area — min-height:0 allows flex child to scroll */
 .scroll-body{
   flex:1;
   min-height:0;
@@ -445,123 +431,117 @@ body{min-height:100%;min-height:100dvh;width:100%;background:var(--kg-bg);font-f
   overflow-x:hidden;
   -webkit-overflow-scrolling:touch;
   overscroll-behavior-y:contain;
-  padding:12px 16px;
-  padding-bottom:calc(90px + env(safe-area-inset-bottom,0px));
+  padding:0.75rem 1rem;
+  padding-bottom:calc(5.5rem + env(safe-area-inset-bottom,0px));
   width:100%;
 }
 
-/* Screen header (gradient top area) */
 .screen-header{
   flex-shrink:0;
-  padding:16px 16px 20px;
-  padding-top:calc(16px + env(safe-area-inset-top,44px));
+  padding:1rem;
+  padding-top:calc(1rem + env(safe-area-inset-top,2.75rem));
   width:100%;
 }
 
-/* Tab bar — fija abajo para que siempre sea visible */
 .tab-bar{
   position:fixed;
   bottom:0;
-  left:0;
-  right:0;
+  left:50%;
+  transform:translateX(-50%);
+  width:100%;
+  max-width:var(--kg-app-max);
   display:flex;
   background:var(--kg-surface);
   border-top:1.5px solid var(--kg-border-light);
-  padding:6px 0;
-  padding-bottom:max(14px,env(safe-area-inset-bottom,0px));
-  width:100%;
-  max-width:430px;
-  margin:0 auto;
+  padding:0.375rem 0;
+  padding-bottom:max(0.875rem,env(safe-area-inset-bottom,0px));
   z-index:50;
 }
-@media (max-width:430px){ .tab-bar{ max-width:none } }
 .tab-item{
   flex:1;
   display:flex;
   flex-direction:column;
   align-items:center;
-  gap:2px;
+  gap:0.125rem;
   cursor:pointer;
-  padding:6px 2px;
+  padding:0.375rem 0.125rem;
   transition:transform .15s;
   position:relative;
   min-width:0;
 }
-.tab-item:active{transform:scale(.88)}
-.ti{font-size:20px;line-height:1}
-.tl{font-size:10px;font-weight:800;color:var(--kg-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.tab-item:active{transform:scale(.92)}
+.ti{font-size:clamp(1.1rem, 4vw, 1.35rem);line-height:1}
+.tl{font-size:clamp(0.6rem, 2vw, 0.75rem);font-weight:800;color:var(--kg-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 
-/* Cards */
 .card{
   background:var(--kg-surface);
-  border-radius:20px;
-  box-shadow:0 2px 14px rgba(0,0,0,.07);
-  padding:14px;
-  margin-bottom:12px;
+  border-radius:clamp(1rem, 4vw, 1.35rem);
+  box-shadow:0 0.125rem 0.875rem rgba(0,0,0,.07);
+  padding:clamp(0.75rem, 3vw, 1rem);
+  margin-bottom:0.75rem;
   border:2px solid transparent;
   width:100%;
 }
 
-/* Modal — full width on mobile */
 .modal-ov{position:fixed;inset:0;background:var(--kg-overlay);z-index:100;display:flex;align-items:flex-end;justify-content:center;animation:fadeIn .2s}
 .modal-sh{
   background:var(--kg-surface);
-  border-radius:28px 28px 0 0;
-  padding:20px 16px;
-  padding-bottom:max(32px,calc(16px + env(safe-area-inset-bottom,0px)));
+  border-radius:1.75rem 1.75rem 0 0;
+  padding:clamp(1rem, 4vw, 1.35rem);
+  padding-bottom:max(2rem,calc(1rem + env(safe-area-inset-bottom,0px)));
   width:100%;
-  max-width:430px;
+  max-width:var(--kg-app-max);
+  margin:0 auto;
   animation:slideUp .3s cubic-bezier(.34,1.56,.64,1);
   max-height:88vh;
   overflow-y:auto;
   -webkit-overflow-scrolling:touch;
 }
-@media (max-width:430px){ .modal-sh{ max-width:none; border-radius:24px 24px 0 0; } }
-.handle{width:40px;height:4px;background:var(--kg-border);border-radius:50px;margin:0 auto 16px}
+.handle{width:2.5rem;height:0.25rem;background:var(--kg-border);border-radius:50px;margin:0 auto 1rem}
 
-/* Misc */
-.pill{display:inline-flex;align-items:center;gap:3px;border-radius:50px;padding:3px 10px;font-weight:800;font-size:12px}
+.pill{display:inline-flex;align-items:center;gap:0.2rem;border-radius:50px;padding:0.2rem 0.65rem;font-weight:800;font-size:clamp(0.7rem, 2vw, 0.8rem)}
 .sb{background:var(--kg-gold-light);color:var(--kg-gold)}
 .prog-bar{background:var(--kg-border-light);border-radius:50px;overflow:hidden}
 .prog-fill{height:100%;border-radius:50px;transition:width .7s cubic-bezier(.34,1.56,.64,1)}
 .toast{
   position:fixed;
-  top:max(52px,calc(env(safe-area-inset-top,0px) + 12px));
-  right:12px;left:12px;
-  max-width:400px;
-  margin:0 auto;
+  top:max(3.25rem,calc(env(safe-area-inset-top,0px) + 0.75rem));
+  left:50%;
+  transform:translateX(-50%);
+  width:calc(100% - 1.5rem);
+  max-width:25rem;
   background:var(--kg-primary-dark);
   color:#fff;
-  padding:12px 16px;
-  border-radius:16px;
+  padding:0.75rem 1rem;
+  border-radius:1rem;
   font-weight:800;
-  font-size:13px;
+  font-size:clamp(0.8rem, 2vw, 0.9rem);
   z-index:300;
   animation:toastIn .35s cubic-bezier(.34,1.56,.64,1);
-  box-shadow:0 6px 24px rgba(0,0,0,.3);
+  box-shadow:0 0.375rem 1.5rem rgba(0,0,0,.3);
   line-height:1.4;
 }
-.confp{position:fixed;border-radius:3px;animation:cfFall linear forwards;z-index:999;pointer-events:none}
-.badge{position:absolute;top:0;right:8%;background:var(--kg-error);color:#fff;border-radius:50%;width:15px;height:15px;font-size:9px;font-weight:900;display:flex;align-items:center;justify-content:center}
-.widget{background:linear-gradient(135deg,#F0FAE6,#EBF8FF);border-radius:18px;padding:12px;margin:0 0 12px;border:2px solid var(--kg-border);width:100%}
+.confp{position:fixed;border-radius:0.2rem;animation:cfFall linear forwards;z-index:999;pointer-events:none}
+.badge{position:absolute;top:0;right:8%;background:var(--kg-error);color:#fff;border-radius:50%;width:clamp(0.9rem, 3vw, 1rem);height:clamp(0.9rem, 3vw, 1rem);font-size:clamp(0.5rem, 1.5vw, 0.6rem);font-weight:900;display:flex;align-items:center;justify-content:center}
+.widget{background:linear-gradient(135deg,#F0FAE6,#EBF8FF);border-radius:1.125rem;padding:0.75rem;margin:0 0 0.75rem;border:2px solid var(--kg-border);width:100%}
 
-/* Logout button — always top-right, never overlapping content */
 .logout-btn{
   position:absolute;
-  top:max(16px,calc(env(safe-area-inset-top,44px) - 4px));
-  right:16px;
+  top:max(1rem,calc(env(safe-area-inset-top,2.75rem) - 0.25rem));
+  right:1rem;
   background:rgba(255,255,255,.22);
   border:1.5px solid rgba(255,255,255,.4);
   border-radius:50%;
-  width:36px;height:36px;
+  width:clamp(2rem, 6vw, 2.5rem);
+  height:clamp(2rem, 6vw, 2.5rem);
   display:flex;align-items:center;justify-content:center;
-  font-size:15px;
+  font-size:clamp(0.85rem, 2.5vw, 1rem);
   cursor:pointer;
   color:#fff;
   z-index:10;
 }
 
-input,select,textarea{font-family:'Nunito',sans-serif;outline:none;font-size:16px!important;-webkit-appearance:none}
+input,select,textarea{font-family:'Nunito',sans-serif;outline:none;font-size:1rem!important;-webkit-appearance:none}
 ::-webkit-scrollbar{display:none}
 
 @keyframes pop{0%{transform:scale(.4);opacity:0}70%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}}
@@ -585,6 +565,8 @@ function Confetti() {
 
 function Avatar({ photo, emoji, size=52, color="#ccc", onClick }) {
   const ref=useRef();
+  const s=rem(size);
+  const sNum=Number(size);
   async function handleFile(e) {
     const f=e.target.files?.[0];
     if(!f||!f.type.startsWith("image/")||!onClick)return;
@@ -595,11 +577,11 @@ function Avatar({ photo, emoji, size=52, color="#ccc", onClick }) {
     e.target.value="";
   }
   return (
-    <div style={{position:"relative",width:size,height:size,cursor:onClick?"pointer":"default"}} onClick={()=>onClick&&ref.current?.click()}>
-      <div style={{width:size,height:size,borderRadius:"50%",background:photo?"none":`${color}33`,border:`3px solid ${color}`,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",boxSizing:"border-box"}}>
-        {photo?<img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:size*.45}}>{emoji}</span>}
+    <div style={{position:"relative",width:s,height:s,cursor:onClick?"pointer":"default"}} onClick={()=>onClick&&ref.current?.click()}>
+      <div style={{width:s,height:s,borderRadius:"50%",background:photo?"none":`${color}33`,border:"3px solid",borderColor:color,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",boxSizing:"border-box"}}>
+        {photo?<img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:rem(sNum*.45)}}>{emoji}</span>}
       </div>
-      {onClick&&<div style={{position:"absolute",bottom:0,right:0,background:color,borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#fff",border:"2px solid #fff"}}>📷</div>}
+      {onClick&&<div style={{position:"absolute",bottom:0,right:0,background:color,borderRadius:"50%",width:rem(22),height:rem(22),display:"flex",alignItems:"center",justifyContent:"center",fontSize:rem(11),color:"#fff",border:"2px solid #fff"}}>📷</div>}
       {onClick&&<input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>}
     </div>
   );
@@ -607,11 +589,11 @@ function Avatar({ photo, emoji, size=52, color="#ccc", onClick }) {
 
 function ProgressBar({ value, max, color, height=8 }) {
   const pct=max>0?Math.min((value/max)*100,100):0;
-  return <div className="prog-bar" style={{height}}><div className="prog-fill" style={{width:`${pct}%`,height:"100%",background:color}}/></div>;
+  return <div className="prog-bar" style={{height:rem(height)}}><div className="prog-fill" style={{width:`${pct}%`,height:"100%",background:color}}/></div>;
 }
 
 function StarBadge({ n, size="sm" }) {
-  return <span className={`pill sb`} style={{fontSize:size==="lg"?15:11,padding:size==="lg"?"5px 14px":"3px 10px"}}>{"⭐".repeat(Math.min(n,3))}{n>3?` x${n}`:""}</span>;
+  return <span className={`pill sb`} style={{fontSize:size==="lg"?rem(15):rem(11),padding:size==="lg"?rem(5)+" "+rem(14):rem(3)+" "+rem(10)}}>{"⭐".repeat(Math.min(n,3))}{n>3?` x${n}`:""}</span>;
 }
 
 // iOS Widget simulation
@@ -673,26 +655,26 @@ function AuthScreen({ onLogin }) {
   }
 
   return (
-    <div className="screen" style={{background:"linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 60%,#FFFBEA 100%)",alignItems:"center",justifyContent:"center",overflowY:"auto",padding:"40px 24px"}}>
-      <div style={{textAlign:"center",marginBottom:56,animation:"pop .5s both"}}>
-        <div style={{fontSize:80,marginBottom:-4,animation:"bounce 3s infinite"}}>🏠</div>
-        <div style={{fontSize:40,fontWeight:900,letterSpacing:-1}}>
+    <div className="screen" style={{background:"linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 60%,#FFFBEA 100%)",alignItems:"center",justifyContent:"center",overflowY:"auto",padding:rem(40)+" "+rem(24)}}>
+      <div style={{textAlign:"center",marginBottom:rem(56),animation:"pop .5s both"}}>
+        <div style={{fontSize:rem(80),marginBottom:rem(-4),animation:"bounce 3s infinite"}}>🏠</div>
+        <div style={{fontSize:"clamp(2rem, 8vw, 2.75rem)",fontWeight:900,letterSpacing:-1}}>
           <span style={{color:"#8DC63F"}}>K</span><span style={{color:"#FFB800"}}>I</span><span style={{color:"#5BC8F5"}}>D</span><span style={{color:"#FF85C2"}}>S</span>
         </div>
-        <div style={{fontSize:16,fontWeight:900,color:"#4A7A1E",letterSpacing:5}}>GOALS</div>
-        <p style={{color:"#888",fontSize:13,marginTop:10,lineHeight:1.6}}>Gestiona tareas, logros y recompensas para toda la familia</p>
+        <div style={{fontSize:rem(16),fontWeight:900,color:"#4A7A1E",letterSpacing:5}}>GOALS</div>
+        <p style={{color:"#888",fontSize:rem(13),marginTop:rem(10),lineHeight:1.6}}>Gestiona tareas, logros y recompensas para toda la familia</p>
       </div>
 
-      <div style={{display:"flex",flexDirection:"column",gap:12,width:"100%",maxWidth:320}}>
+      <div style={{display:"flex",flexDirection:"column",gap:rem(12),width:"100%",maxWidth:rem(320)}}>
         <button onClick={handleGoogle} disabled={loading}
-          style={{background:"linear-gradient(135deg,#4A7A1E,#2D5010)",color:"#fff",border:"none",borderRadius:14,padding:"17px",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:17,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxShadow:"0 8px 24px rgba(74,122,30,0.35)",opacity:loading?0.7:1,animation:"slideUp .4s .1s both"}}>
+          style={{background:"linear-gradient(135deg,#4A7A1E,#2D5010)",color:"#fff",border:"none",borderRadius:rem(14),padding:rem(17),fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:rem(17),cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:rem(10),boxShadow:"0 8px 24px rgba(74,122,30,0.35)",opacity:loading?0.7:1,animation:"slideUp .4s .1s both"}}>
           {loading
             ? <span style={{animation:"spin 1s linear infinite",display:"inline-block"}}>⏳</span>
-            : <span style={{fontSize:22}}>G</span>}
+            : <span style={{fontSize:rem(22)}}>G</span>}
           {loading ? "Conectando..." : "Iniciar sesión con Google"}
         </button>
-        {error && <p style={{color:PALETTE.error,fontSize:13,textAlign:"center",fontWeight:700}}>{error}</p>}
-        <p style={{color:"#aaa",fontSize:11,textAlign:"center",lineHeight:1.6}}>
+        {error && <p style={{color:PALETTE.error,fontSize:rem(13),textAlign:"center",fontWeight:700}}>{error}</p>}
+        <p style={{color:"#aaa",fontSize:rem(11),textAlign:"center",lineHeight:1.6}}>
           Cada miembro de la familia entra con su propia cuenta Google (padres e hijos).<br/>
           Si quieres cambiar de usuario, cierra sesión desde Configuración y vuelve a iniciar sesión con la cuenta del niño.
         </p>
@@ -713,15 +695,15 @@ function RoleScreen({ user, onRole }) {
     onRole({ role, kidId: kidId||null });
   }
   return (
-    <div className="screen" style={{background:"linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 60%,#FFFBEA 100%)",alignItems:"center",justifyContent:"center",overflowY:"auto",padding:"40px 24px"}}>
-      <div style={{textAlign:"center",marginBottom:32}}>
+    <div className="screen" style={{background:"linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 60%,#FFFBEA 100%)",alignItems:"center",justifyContent:"center",overflowY:"auto",padding:rem(40)+" "+rem(24)}}>
+      <div style={{textAlign:"center",marginBottom:rem(32)}}>
         {user.photoURL
-          ? <img src={user.photoURL} alt="" style={{width:72,height:72,borderRadius:"50%",border:"3px solid #8DC63F",marginBottom:12}}/>
-          : <div style={{fontSize:56,marginBottom:12}}>👤</div>}
-        <h2 style={{fontWeight:900,fontSize:22,color:"#222"}}>¡Hola, {user.displayName}!</h2>
-        <p style={{color:"#888",fontSize:13,marginTop:6}}>Primera vez aquí. ¿Quién eres?</p>
+          ? <img src={user.photoURL} alt="" style={{width:rem(72),height:rem(72),borderRadius:"50%",border:"3px solid #8DC63F",marginBottom:rem(12)}}/>
+          : <div style={{fontSize:rem(56),marginBottom:rem(12)}}>👤</div>}
+        <h2 style={{fontWeight:900,fontSize:"clamp(1.2rem, 4vw, 1.5rem)",color:"#222"}}>¡Hola, {user.displayName}!</h2>
+        <p style={{color:"#888",fontSize:rem(13),marginTop:rem(6)}}>Primera vez aquí. ¿Quién eres?</p>
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:12,width:"100%",maxWidth:320}}>
+      <div style={{display:"flex",flexDirection:"column",gap:rem(12),width:"100%",maxWidth:rem(320)}}>
         {[
           {label:"👨 Soy padre", role:"father", kidId:null, color:"#FFB800", shadow:"rgba(255,184,0,0.35)"},
           {label:"👩 Soy madre", role:"mother", kidId:null, color:"#E91E8C", shadow:"rgba(233,30,140,0.35)"},
@@ -729,7 +711,7 @@ function RoleScreen({ user, onRole }) {
           {label:"👦 Soy David", role:"child", kidId:"david", color:"#5BC8F5", shadow:"rgba(91,200,245,0.35)"},
         ].map(o=>(
           <button key={o.role+o.kidId} onClick={()=>choose(o.role,o.kidId)} disabled={loading}
-            style={{background:`linear-gradient(135deg,${o.color},${o.color}cc)`,color:"#fff",border:"none",borderRadius:18,padding:"18px 24px",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:18,cursor:"pointer",boxShadow:`0 8px 24px ${o.shadow}`,opacity:loading?0.7:1}}>
+            style={{background:`linear-gradient(135deg,${o.color},${o.color}cc)`,color:"#fff",border:"none",borderRadius:rem(18),padding:rem(18)+" "+rem(24),fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:"clamp(0.95rem, 3vw, 1.15rem)",cursor:"pointer",boxShadow:`0 8px 24px ${o.shadow}`,opacity:loading?0.7:1}}>
             {o.label}
           </button>
         ))}
@@ -2264,8 +2246,13 @@ export default function App() {
   const fcmSwReg = useRef(null);
 
   const dispatch = useCallback((action) => {
-    rawDispatch(prev => reducer(prev, action));
-  }, []);
+    const mustSaveNow = ["ADD_TASK", "EDIT_TASK", "DELETE_TASK"].includes(action?.type);
+    rawDispatch(prev => {
+      const next = reducer(prev, action);
+      if (mustSaveNow && authUser && roleData) saveAppState(next).catch(console.error);
+      return next;
+    });
+  }, [authUser, roleData]);
 
   // Registrar Service Worker de FCM al montar para que los push en segundo plano se muestren
   useEffect(() => {
@@ -2378,13 +2365,7 @@ export default function App() {
     if (!authUser || !roleData) return;
     const unsub = subscribeAppState((data) => {
       let merged = { ...data };
-      if (Array.isArray(merged.tasks) && merged.tasks.length>0) {
-        const existingIds = new Set(merged.tasks.map(t=>t.id));
-        const extra = INIT_TASKS.filter(t=>!existingIds.has(t.id));
-        if (extra.length>0) merged.tasks = [...merged.tasks, ...extra];
-      } else {
-        merged.tasks = INIT_TASKS;
-      }
+      if (!Array.isArray(merged.tasks) || merged.tasks.length === 0) merged.tasks = INIT_TASKS;
       if (data.parent && !data.parents) {
         merged.parents = { father: { ...data.parent, name: data.parent.name||"Papá" }, mother: { ...data.parent, name: data.parent.name||"Mamá" } };
         delete merged.parent;
