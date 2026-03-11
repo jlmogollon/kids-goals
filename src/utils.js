@@ -187,6 +187,8 @@ export function initState() {
     actingAs: null,      // { role: 'father'|'mother'|'child', kidId?: string }
     activeKid: null,
     tasks: INIT_TASKS,
+    tasksVersion: 0,
+    rolePins: {},
     kids: {},
     parents: { father: { photo: null, name: "Papá", email: null }, mother: { photo: null, name: "Mamá", email: null } },
     notifications: [],

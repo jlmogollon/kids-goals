@@ -176,12 +176,15 @@ function reducer(st, a) {
 
     case "COMPLETE_TASK": {
       const { kidId, taskId } = a;
+      const kidPrev0 = st.kids[kidId];
+      const existing = kidPrev0?.completions?.[taskId];
+      if (existing?.done && isToday(existing.date)) return st; // ya completada hoy, ignorar doble clic
       const task = st.tasks.find(t=>t.id===taskId);
-      const mult = getStreakMult(st.kids[kidId].stats.streak||0);
+      const mult = getStreakMult(kidPrev0.stats.streak||0);
       const comp = { done:true, approved:false, evidence:null, photoUrl:null, date:new Date().toISOString(), mult };
       const dateKey = new Date().toISOString().slice(0,10);
       const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
-      const kidPrev = st.kids[kidId];
+      const kidPrev = kidPrev0;
       const dayLog = kidPrev.activityLog?.[dateKey] || [];
       const entry = { id:Date.now(), type:"taskDone", taskId, taskName:task?.name, time };
       const newKid = {
@@ -254,9 +257,11 @@ function reducer(st, a) {
         notifications:newNotifs, approvalLog:[logEntry,...st.approvalLog], modal:null, toast:"❌ Tarea rechazada" };
     }
 
-    case "ADD_TASK": return { ...st, tasks:[...st.tasks, {...a.task,id:st.nextId}], nextId:st.nextId+1, modal:null, toast:`✅ Tarea "${a.task.name}" creada` };
-    case "EDIT_TASK": return { ...st, tasks:st.tasks.map(t=>t.id===a.task.id?a.task:t), modal:null, toast:"✅ Tarea actualizada" };
-    case "DELETE_TASK": return { ...st, tasks:st.tasks.filter(t=>t.id!==a.taskId), modal:null, toast:"🗑️ Tarea eliminada" };
+    case "ADD_TASK": return { ...st, tasks:[...st.tasks, {...a.task,id:st.nextId}], nextId:st.nextId+1, modal:null, toast:`✅ Tarea "${a.task.name}" creada`, tasksVersion:(st.tasksVersion||0)+1 };
+    case "EDIT_TASK": return { ...st, tasks:st.tasks.map(t=>t.id===a.task.id?a.task:t), modal:null, toast:"✅ Tarea actualizada", tasksVersion:(st.tasksVersion||0)+1 };
+    case "DELETE_TASK": return { ...st, tasks:st.tasks.filter(t=>t.id!==a.taskId), modal:null, toast:"🗑️ Tarea eliminada", tasksVersion:(st.tasksVersion||0)+1 };
+    case "SET_ROLE_PIN": return { ...st, rolePins:{ ...(st.rolePins||{}), [a.roleKey]:a.pin } };
+    case "RESET_ROLE_PIN": return { ...st, rolePins:{ ...(st.rolePins||{}), [a.roleKey]:null } };
 
     case "ADD_PAYMENT": {
       const p={ id:Date.now(), amount:a.amount, note:a.note, date:new Date().toLocaleDateString("es-ES") };
@@ -773,7 +778,6 @@ function OnboardingWizard({ st, dispatch, authUser, setRoleData, setAppLoading }
   const [otherParent, setOtherParent] = useState({ add: false, name: "", email: "" });
   const [children, setChildren] = useState([]);
   const [selectedTaskIds, setSelectedTaskIds] = useState(new Set(INIT_TASKS.slice(0, 8).map(t=>t.id)));
-  const [pin, setPin] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function finishOnboarding() {
@@ -797,23 +801,23 @@ function OnboardingWizard({ st, dispatch, authUser, setRoleData, setAppLoading }
     }
     const initialState = { ...initState(), tasks, kids, parents, nextId };
     await saveAppState(uid, initialState);
-    await setUserRole(uid, { role: myRole, familyId: uid, name: authUser.displayName, email: authUser.email, photo: authUser.photoURL, pinHash: pin || null });
+    await setUserRole(uid, { role: myRole, familyId: uid, name: authUser.displayName, email: authUser.email, photo: authUser.photoURL });
     const loggedAccount = { uid, role: myRole, familyId: uid, name: authUser.displayName, email: authUser.email, googlePhoto: authUser.photoURL };
     setRoleData(loggedAccount);
     setAppLoading(false);
     dispatch({ type: "ONBOARDING_FINISH", state: { ...initialState, screen: "whoIsUsing", loggedAccount, actingAs: { role: myRole }, activeKid: null } });
   }
 
-  const canNext = (step===1 && myRole) || (step===2) || (step===3 && selectedTaskIds.size>0) || step===4;
+  const canNext = (step===1 && myRole) || step===2 || (step===3 && selectedTaskIds.size>0);
   const handleNext = () => {
-    if (step < 4) dispatch({ type: "SET_ONBOARDING_STEP", step: step + 1 });
+    if (step < 3) dispatch({ type: "SET_ONBOARDING_STEP", step: step + 1 });
     else finishOnboarding();
   };
 
   return (
     <div className="screen" style={{background:"linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 60%,#FFFBEA 100%)",overflowY:"auto",padding:rem(24)}}>
       <div style={{maxWidth:rem(400),margin:"0 auto"}}>
-        <h2 style={{fontWeight:900,fontSize:rem(18),color:"#2D5010",marginBottom:rem(16)}}>Paso {step} de 4</h2>
+        <h2 style={{fontWeight:900,fontSize:rem(18),color:"#2D5010",marginBottom:rem(16)}}>Paso {step} de 3</h2>
         {step === 1 && (
           <>
             <p style={{marginBottom:rem(12),fontSize:rem(14),color:"#555"}}>¿Cuál es tu rol?</p>
@@ -841,78 +845,163 @@ function OnboardingWizard({ st, dispatch, authUser, setRoleData, setAppLoading }
             </div>
           </>
         )}
-        {step === 4 && (
-          <>
-            <p style={{marginBottom:rem(12),fontSize:rem(14),color:"#555"}}>Clave de 4 dígitos (opcional). La usarás para cambiar de rol en este dispositivo.</p>
-            <input type="password" inputMode="numeric" maxLength={4} placeholder="1234" value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,4))} style={{width:rem(120),padding:rem(12),fontSize:rem(18),textAlign:"center",borderRadius:rem(10),border:"2px solid #8DC63F"}}/>
-          </>
-        )}
         <div style={{marginTop:rem(24),display:"flex",gap:rem(12)}}>
           {step > 1 && <button onClick={()=>dispatch({type:"SET_ONBOARDING_STEP",step:step-1})} style={{padding:rem(12),background:"#f0f0f0",borderRadius:rem(12),fontWeight:800}}>Atrás</button>}
-          <button onClick={handleNext} disabled={!canNext || loading} style={{flex:1,padding:rem(14),background:"#4A7A1E",color:"#fff",border:"none",borderRadius:rem(12),fontWeight:900}}>{step===4?(loading?"Creando...":"Crear familia"):"Continuar"}</button>
+          <button onClick={handleNext} disabled={!canNext || loading} style={{flex:1,padding:rem(14),background:"#4A7A1E",color:"#fff",border:"none",borderRadius:rem(12),fontWeight:900}}>{step===3?(loading?"Creando...":"Crear familia"):"Continuar"}</button>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── QUIÉN USA LA APP (cambio de rol / PIN) ──────────────────────────
+// ─── QUIÉN USA LA APP (cambio de rol / PIN por rol) ──────────────────────────
 function WhoIsUsingScreen({ st, dispatch, roleData }) {
-  const [pinInput, setPinInput] = useState("");
   const [selected, setSelected] = useState(null);
+  const [pinInput, setPinInput] = useState("");
+  const [pinSaved, setPinSaved] = useState("");
+  const [pinStep, setPinStep] = useState(null); // null | "enter" | "create" | "confirm"
   const [error, setError] = useState("");
+
   const kidIds = Object.keys(st.kids || {});
+  const rolePins = st.rolePins || {};
+  const isAdmin = (st.loggedAccount?.email || roleData?.email || "").toLowerCase().includes("monsterk17");
+
   const members = [
-    ...(st.parents?.father?.name ? [{ id: "father", role: "father", label: st.parents.father.name }] : []),
-    ...(st.parents?.mother?.name ? [{ id: "mother", role: "mother", label: st.parents.mother.name }] : []),
-    ...kidIds.map(id => ({ id, role: "child", kidId: id, label: st.kids[id]?.name || id })),
+    ...(st.parents?.father?.name ? [{ id:"father", role:"father", label:st.parents.father.name, photo:st.parents.father.photo, emoji:"👨", color:"#FFB800", colorDark:"#CC8800" }] : []),
+    ...(st.parents?.mother?.name ? [{ id:"mother", role:"mother", label:st.parents.mother.name, photo:st.parents.mother.photo, emoji:"👩", color:"#E91E8C", colorDark:"#C2185B" }] : []),
+    ...kidIds.map((id, i) => {
+      const kid = st.kids[id];
+      const isGirl = ["Hija","Sobrina","Prima"].includes(kid?.label || "");
+      const c = KID_COLORS[i % KID_COLORS.length];
+      return { id, role:"child", kidId:id, label:kid?.name||id, photo:kid?.photo, emoji:isGirl?"👧":"👦", color:c.p, colorDark:c.a };
+    }),
   ].filter(m => m.label);
 
-  function onSelect(m) {
-    const isParent = m.role === "father" || m.role === "mother";
-    dispatch({ type: "SET_ACTING_AS", actingAs: isParent ? { role: m.role } : { role: "child", kidId: m.kidId }, screen: isParent ? "parent" : "child", activeKid: m.kidId || null });
+  function getRoleKey(m) { return m.role === "child" ? m.kidId : m.role; }
+  function isCurrentRole(m) {
+    if (!st.actingAs) return false;
+    return m.role === "child"
+      ? st.actingAs.role === "child" && st.actingAs.kidId === m.kidId
+      : st.actingAs.role === m.role;
+  }
+  function goToRole(m) {
+    const isP = m.role === "father" || m.role === "mother";
+    dispatch({ type:"SET_ACTING_AS", actingAs:isP?{role:m.role}:{role:"child",kidId:m.kidId}, screen:isP?"parent":"child", activeKid:m.kidId||null });
   }
   function handleSelect(m) {
-    setSelected(m);
-    setError("");
-    setPinInput("");
-    const needPin = roleData?.pinHash && (m.role !== st.loggedAccount?.role || (m.role === "child" && m.kidId !== st.loggedAccount?.kidId));
-    if (!needPin) {
-      onSelect(m);
-      return;
+    if (isCurrentRole(m)) { goToRole(m); return; }
+    setSelected(m); setError(""); setPinInput(""); setPinSaved("");
+    setPinStep(rolePins[getRoleKey(m)] ? "enter" : "create");
+  }
+  function handlePinNext() {
+    if (pinInput.length < 4) { setError("Introduce los 4 dígitos"); return; }
+    if (pinStep === "enter") {
+      if (pinInput === rolePins[getRoleKey(selected)]) goToRole(selected);
+      else { setError("Clave incorrecta ❌"); setPinInput(""); }
+    } else if (pinStep === "create") {
+      setPinSaved(pinInput); setPinInput(""); setPinStep("confirm"); setError("");
+    } else if (pinStep === "confirm") {
+      if (pinInput !== pinSaved) { setError("Las claves no coinciden ❌"); setPinInput(""); }
+      else { dispatch({ type:"SET_ROLE_PIN", roleKey:getRoleKey(selected), pin:pinInput }); goToRole(selected); }
     }
   }
-  function confirmPin() {
-    if (!selected) return;
-    const correct = (roleData?.pinHash || "") === pinInput;
-    if (correct) onSelect(selected);
-    else setError("Clave incorrecta");
+  function handleReset() {
+    dispatch({ type:"RESET_ROLE_PIN", roleKey:getRoleKey(selected) });
+    setError(""); setPinInput(""); setPinStep("create");
   }
 
   if (members.length === 0) {
-    const isParent = st.loggedAccount?.role === "father" || st.loggedAccount?.role === "mother";
-    dispatch({ type: "SET_ACTING_AS", actingAs: isParent ? { role: st.loggedAccount.role } : { role: "child", kidId: kidIds[0] }, screen: isParent ? "parent" : "child", activeKid: kidIds[0] || null });
+    const isP = st.loggedAccount?.role==="father"||st.loggedAccount?.role==="mother";
+    dispatch({ type:"SET_ACTING_AS", actingAs:isP?{role:st.loggedAccount.role}:{role:"child",kidId:kidIds[0]}, screen:isP?"parent":"child", activeKid:kidIds[0]||null });
     return null;
   }
 
   return (
-    <div className="screen" style={{background:"linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 60%,#FFFBEA 100%)",alignItems:"center",justifyContent:"center",overflowY:"auto",padding:rem(24)}}>
-      <div style={{textAlign:"center",marginBottom:rem(24)}}>
-        <h2 style={{fontWeight:900,fontSize:rem(18),color:"#222"}}>¿Quién usa la app?</h2>
-        <p style={{color:"#666",fontSize:rem(13),marginTop:rem(6)}}>Elige para continuar (o cambiar de rol)</p>
-      </div>
-      <div style={{display:"flex",flexDirection:"column",gap:rem(10),width:"100%",maxWidth:rem(320)}}>
-        {members.map(m => (
-          <button key={m.id + (m.kidId||"")} onClick={()=>handleSelect(m)} style={{background:selected?.id===m.id && selected?.kidId===m.kidId ? "#4A7A1E" : "#f0f0f0",color:selected?.id===m.id ? "#fff" : "#333",border:"none",borderRadius:rem(14),padding:rem(16),fontWeight:800,fontSize:rem(15),cursor:"pointer"}}>{m.label}</button>
-        ))}
-        {selected && roleData?.pinHash && (selected.role !== st.loggedAccount?.role || (selected.role==="child" && selected.kidId !== st.loggedAccount?.kidId)) && (
-          <div style={{marginTop:rem(12)}}>
-            <input type="password" inputMode="numeric" maxLength={4} placeholder="Clave 4 dígitos" value={pinInput} onChange={e=>setPinInput(e.target.value.replace(/\D/g,"").slice(0,4))} style={{width:"100%",padding:rem(12),borderRadius:rem(10),border:"2px solid #8DC63F",marginBottom:rem(8)}}/>
-            {error && <p style={{color:PALETTE.error,fontSize:rem(12),marginBottom:rem(8)}}>{error}</p>}
-            <button onClick={confirmPin} style={{width:"100%",padding:rem(12),background:"#2D5010",color:"#fff",border:"none",borderRadius:rem(10),fontWeight:800}}>Entrar</button>
+    <div className="screen" style={{background:"linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 60%,#FFFBEA 100%)",alignItems:"center",justifyContent:"center",overflowY:"auto",padding:`${rem(32)} ${rem(20)}`}}>
+      {!pinStep ? (
+        <div style={{width:"100%",maxWidth:rem(460),display:"flex",flexDirection:"column",alignItems:"center",gap:rem(24)}}>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:rem(48),marginBottom:rem(8)}}>👋</div>
+            <h2 style={{fontWeight:900,fontSize:rem(22),color:"#222",margin:0}}>¿Quién usa la app?</h2>
+            <p style={{color:"#666",fontSize:rem(13),marginTop:rem(6),marginBottom:0}}>Elige tu perfil para continuar</p>
           </div>
-        )}
-      </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(2, 1fr)",gap:rem(12),width:"100%"}}>
+            {members.map(m => {
+              const isCurrent = isCurrentRole(m);
+              const hasPinSet = !!rolePins[getRoleKey(m)];
+              return (
+                <button key={m.id+(m.kidId||"")} onClick={()=>handleSelect(m)} style={{
+                  background:isCurrent?`linear-gradient(135deg,${m.color},${m.colorDark})`:"#fff",
+                  border:`2px solid ${isCurrent?m.color:m.color+"55"}`,
+                  borderRadius:rem(20),padding:rem(18),display:"flex",flexDirection:"column",
+                  alignItems:"center",gap:rem(10),cursor:"pointer",
+                  boxShadow:isCurrent?`0 6px 20px ${m.color}44`:"0 2px 8px rgba(0,0,0,0.06)",
+                  minHeight:rem(120),fontFamily:"'Nunito',sans-serif"
+                }}>
+                  {m.photo
+                    ? <img src={m.photo} style={{width:rem(56),height:rem(56),borderRadius:"50%",objectFit:"cover",border:`3px solid ${isCurrent?"rgba(255,255,255,0.6)":m.color+"55"}`}} alt={m.label}/>
+                    : <span style={{fontSize:rem(46),lineHeight:1}}>{m.emoji}</span>
+                  }
+                  <div style={{textAlign:"center"}}>
+                    <div style={{fontWeight:900,fontSize:rem(15),color:isCurrent?"#fff":"#222",lineHeight:1.2}}>{m.label}</div>
+                    <div style={{fontSize:rem(11),color:isCurrent?"rgba(255,255,255,0.75)":"#aaa",marginTop:rem(3)}}>
+                      {hasPinSet?"🔐 ":"🔓 "}{m.role==="father"?"Padre":m.role==="mother"?"Madre":"Niño/a"}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div style={{width:"100%",maxWidth:rem(320),display:"flex",flexDirection:"column",alignItems:"center",gap:rem(16)}}>
+          <button onClick={()=>{setSelected(null);setPinStep(null);setError("");setPinInput("");}} style={{alignSelf:"flex-start",background:"none",border:"none",color:"#888",fontSize:rem(13),cursor:"pointer",display:"flex",alignItems:"center",gap:rem(4),padding:0,fontFamily:"'Nunito',sans-serif"}}>
+            ← Volver
+          </button>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:rem(6),textAlign:"center"}}>
+            {selected?.photo
+              ? <img src={selected.photo} style={{width:rem(72),height:rem(72),borderRadius:"50%",objectFit:"cover",border:`4px solid ${selected?.color}`}} alt={selected?.label}/>
+              : <span style={{fontSize:rem(60),lineHeight:1}}>{selected?.emoji}</span>
+            }
+            <h3 style={{fontWeight:900,fontSize:rem(20),color:"#222",margin:0}}>{selected?.label}</h3>
+            <p style={{color:"#666",fontSize:rem(13),margin:0}}>
+              {pinStep==="enter"&&"Introduce tu clave de acceso"}
+              {pinStep==="create"&&"Crea tu clave de 4 dígitos"}
+              {pinStep==="confirm"&&"Repite la clave para confirmar"}
+            </p>
+          </div>
+          <div style={{display:"flex",gap:rem(12),justifyContent:"center"}}>
+            {[0,1,2,3].map(i=>(
+              <div key={i} style={{width:rem(14),height:rem(14),borderRadius:"50%",background:pinInput.length>i?(selected?.color||"#4A7A1E"):"#ddd",transition:"background 0.1s"}}/>
+            ))}
+          </div>
+          <input
+            type="password" inputMode="numeric" maxLength={4}
+            value={pinInput}
+            onChange={e=>{setPinInput(e.target.value.replace(/\D/g,"").slice(0,4));setError("");}}
+            onKeyDown={e=>{if(e.key==="Enter"&&pinInput.length===4)handlePinNext();}}
+            autoFocus
+            placeholder="••••"
+            style={{width:rem(130),padding:rem(14),fontSize:rem(22),textAlign:"center",letterSpacing:rem(6),borderRadius:rem(14),border:`2px solid ${pinInput.length===4?(selected?.color||"#4A7A1E"):"#ddd"}`,fontFamily:"'Nunito',sans-serif",fontWeight:900,outline:"none"}}
+          />
+          {error&&<p style={{color:PALETTE.error,fontSize:rem(12),margin:0,textAlign:"center"}}>{error}</p>}
+          <button onClick={handlePinNext} disabled={pinInput.length<4}
+            style={{width:"100%",padding:rem(14),background:pinInput.length===4?`linear-gradient(135deg,${selected?.color||"#4A7A1E"},${selected?.colorDark||"#2D5010"})`:"#eee",color:pinInput.length===4?"#fff":"#aaa",border:"none",borderRadius:rem(14),fontWeight:900,fontSize:rem(16),cursor:pinInput.length===4?"pointer":"default",fontFamily:"'Nunito',sans-serif"}}>
+            {pinStep==="enter"?"Entrar →":pinStep==="create"?"Continuar →":"Confirmar ✓"}
+          </button>
+          {pinStep==="enter"&&isAdmin&&(
+            <button onClick={handleReset} style={{background:"none",border:"none",color:"#999",fontSize:rem(12),cursor:"pointer",textDecoration:"underline",padding:0,fontFamily:"'Nunito',sans-serif"}}>
+              Restablecer clave (administrador)
+            </button>
+          )}
+          {pinStep==="create"&&(
+            <p style={{color:"#aaa",fontSize:rem(11),margin:0,textAlign:"center",lineHeight:1.5}}>
+              Esta clave protegerá el perfil de <strong>{selected?.label}</strong>.<br/>
+              Solo el administrador puede restablecerla si la olvidas.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2155,6 +2244,30 @@ function ParentConfig({ st, dispatch, parentRole, currentParent, familyId }) {
         </div>
         {/* Kids */}
         {(Object.keys(st.kids||{})).map(id=><KidEditor key={id} id={id} kid={st.kids[id]} dispatch={dispatch} familyId={familyId}/>)}
+
+        {/* Gestión de claves — solo visible para el administrador (monsterk17) */}
+        {(st.loggedAccount?.email||"").toLowerCase().includes("monsterk17") && (
+          <div style={{padding:"12px 0",borderTop:"1px solid #f0f0f0",marginTop:4}}>
+            <div style={{fontWeight:900,fontSize:13,color:"#555",marginBottom:8}}>🔐 Claves de acceso por perfil</div>
+            {[
+              ...(st.parents?.father?.name ? [{key:"father",label:st.parents.father.name,emoji:"👨"}] : []),
+              ...(st.parents?.mother?.name ? [{key:"mother",label:st.parents.mother.name,emoji:"👩"}] : []),
+              ...Object.keys(st.kids||{}).map((id,i)=>{const isGirl=["Hija","Sobrina","Prima"].includes(st.kids[id]?.label||"");return{key:id,label:st.kids[id]?.name||id,emoji:isGirl?"👧":"👦"};})
+            ].map(({key,label,emoji})=>(
+              <div key={key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f8f8f8"}}>
+                <span style={{fontSize:13,color:"#444"}}>{emoji} {label}: <span style={{color:(st.rolePins||{})[key]?"#4A7A1E":"#aaa"}}>{(st.rolePins||{})[key]?"🔐 protegido":"🔓 sin clave"}</span></span>
+                {(st.rolePins||{})[key] && (
+                  <button onClick={()=>dispatch({type:"RESET_ROLE_PIN",roleKey:key})} style={{fontSize:11,padding:"3px 10px",borderRadius:6,background:"#FFF0F0",border:"1px solid #FFD0D0",color:PALETTE.error,cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800}}>
+                    Borrar
+                  </button>
+                )}
+              </div>
+            ))}
+            <p style={{fontSize:11,color:"#aaa",marginTop:8,lineHeight:1.4}}>
+              Borra la clave de un perfil si alguien la olvidó. La próxima vez que entre ese perfil, se le pedirá crear una nueva.
+            </p>
+          </div>
+        )}
       </div>
 
       {!FCM_VAPID_KEY&&(
@@ -2706,6 +2819,10 @@ export default function App() {
       const pr = (roleData?.role === "mother" || roleData?.role === "father") ? roleData.role : null;
       rawDispatch(prev => ({
         ...prev, ...merged,
+        // Solo actualizar tasks si la versión de Firestore es >= a la versión local (evitar que datos
+        // antiguos en vuelo sobrescriban una eliminación/edición que aún no se confirmó en el servidor)
+        tasks: (merged.tasksVersion ?? 0) >= (prev.tasksVersion ?? 0) ? merged.tasks : prev.tasks,
+        tasksVersion: Math.max(merged.tasksVersion ?? 0, prev.tasksVersion ?? 0),
         screen: prev.screen, modal: prev.modal, toast: prev.toast,
         confetti: prev.confetti, loggedAccount: prev.loggedAccount,
         ...(roleData?.role === "child" ? { activeKid: roleData.kidId || prev.activeKid } : {}),
