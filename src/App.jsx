@@ -254,9 +254,9 @@ function reducer(st, a) {
         notifications:newNotifs, approvalLog:[logEntry,...st.approvalLog], modal:null, toast:"❌ Tarea rechazada" };
     }
 
-    case "ADD_TASK": return { ...st, tasks:[...st.tasks, {...a.task,id:st.nextId}], nextId:st.nextId+1, modal:null, toast:`✅ Tarea "${a.task.name}" creada` };
-    case "EDIT_TASK": return { ...st, tasks:st.tasks.map(t=>t.id===a.task.id?a.task:t), modal:null, toast:"✅ Tarea actualizada" };
-    case "DELETE_TASK": return { ...st, tasks:st.tasks.filter(t=>t.id!==a.taskId), modal:null, toast:"🗑️ Tarea eliminada" };
+    case "ADD_TASK": return { ...st, tasks:[...st.tasks, {...a.task,id:st.nextId}], nextId:st.nextId+1, modal:null, toast:`✅ Tarea "${a.task.name}" creada`, tasksVersion:(st.tasksVersion||0)+1 };
+    case "EDIT_TASK": return { ...st, tasks:st.tasks.map(t=>t.id===a.task.id?a.task:t), modal:null, toast:"✅ Tarea actualizada", tasksVersion:(st.tasksVersion||0)+1 };
+    case "DELETE_TASK": return { ...st, tasks:st.tasks.filter(t=>t.id!==a.taskId), modal:null, toast:"🗑️ Tarea eliminada", tasksVersion:(st.tasksVersion||0)+1 };
 
     case "ADD_PAYMENT": {
       const p={ id:Date.now(), amount:a.amount, note:a.note, date:new Date().toLocaleDateString("es-ES") };
@@ -2706,6 +2706,10 @@ export default function App() {
       const pr = (roleData?.role === "mother" || roleData?.role === "father") ? roleData.role : null;
       rawDispatch(prev => ({
         ...prev, ...merged,
+        // Solo actualizar tasks si la versión de Firestore es >= a la versión local (evitar que datos
+        // antiguos en vuelo sobrescriban una eliminación/edición que aún no se confirmó en el servidor)
+        tasks: (merged.tasksVersion ?? 0) >= (prev.tasksVersion ?? 0) ? merged.tasks : prev.tasks,
+        tasksVersion: Math.max(merged.tasksVersion ?? 0, prev.tasksVersion ?? 0),
         screen: prev.screen, modal: prev.modal, toast: prev.toast,
         confetti: prev.confetti, loggedAccount: prev.loggedAccount,
         ...(roleData?.role === "child" ? { activeKid: roleData.kidId || prev.activeKid } : {}),
