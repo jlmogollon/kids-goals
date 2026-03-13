@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+
 /* Base responsive: escala según viewport para móvil, tablet y escritorio */
 :root {
   font-family: 'Nunito', system-ui, sans-serif;
@@ -10,10 +12,30 @@
   -moz-osx-font-smoothing: grayscale;
   /* 1rem escala entre ~12px (móvil pequeño) y ~18px (escritorio) */
   font-size: clamp(12px, 2.2vmin + 10px, 18px);
+
+  /* Variables de tema de la app */
+  --kg-bg:#e8f4e8;
+  --kg-surface:#fff;
+  --kg-primary:#8DC63F;
+  --kg-primary-dark:#2D5010;
+  --kg-primary-muted:#4A7A1E;
+  --kg-gold:#CC8800;
+  --kg-gold-light:#FFF3CC;
+  --kg-error:#C62828;
+  --kg-text:#1a1a1a;
+  --kg-text-secondary:#555;
+  --kg-text-muted:#888;
+  --kg-border:#e8e8e8;
+  --kg-border-light:#f0f0f0;
+  --kg-overlay:rgba(0,0,0,.5);
+  --kg-app-max: min(100%, 32rem);
 }
 
 * {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 html {
@@ -29,6 +51,8 @@ body {
   min-height: 100dvh;
   width: 100%;
   overflow-x: hidden;
+  background: var(--kg-bg);
+  -webkit-text-size-adjust: 100%;
 }
 
 #root {
@@ -56,3 +80,152 @@ button:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 2px;
 }
+
+.app{
+  width:100%;
+  max-width:var(--kg-app-max);
+  min-height:100vh;
+  min-height:100dvh;
+  margin:0 auto;
+  background:var(--kg-surface);
+  position:relative;
+  overflow-x:hidden;
+  display:flex;
+  flex-direction:column;
+  box-shadow:0 0 3.75rem rgba(0,0,0,.08);
+}
+
+.screen{
+  flex:0 0 auto;
+  display:flex;
+  flex-direction:column;
+  width:100%;
+}
+
+.scroll-body{
+  flex:0 0 auto;
+  overflow-y:visible;
+  overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  padding:0.75rem 1rem;
+  padding-bottom:calc(5.5rem + env(safe-area-inset-bottom,0px));
+  width:100%;
+}
+
+.screen-header{
+  flex-shrink:0;
+  padding:1rem;
+  padding-top:calc(1rem + env(safe-area-inset-top,2.75rem));
+  width:100%;
+}
+
+.tab-bar{
+  position:fixed;
+  bottom:0;
+  left:50%;
+  transform:translateX(-50%);
+  width:100%;
+  max-width:var(--kg-app-max);
+  display:flex;
+  background:var(--kg-surface);
+  border-top:1.5px solid var(--kg-border-light);
+  padding:0.375rem 0;
+  padding-bottom:max(0.875rem,env(safe-area-inset-bottom,0px));
+  z-index:50;
+}
+.tab-item{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:0.125rem;
+  cursor:pointer;
+  padding:0.375rem 0.125rem;
+  transition:transform .15s;
+  position:relative;
+  min-width:0;
+}
+.tab-item:active{transform:scale(.92)}
+.ti{font-size:clamp(1.1rem, 4vw, 1.35rem);line-height:1}
+.tl{font-size:clamp(0.6rem, 2vw, 0.75rem);font-weight:800;color:var(--kg-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+
+.card{
+  background:var(--kg-surface);
+  border-radius:clamp(1rem, 4vw, 1.35rem);
+  box-shadow:0 0.125rem 0.875rem rgba(0,0,0,.07);
+  padding:clamp(0.75rem, 3vw, 1rem);
+  margin-bottom:0.75rem;
+  border:2px solid transparent;
+  width:100%;
+}
+
+.modal-ov{position:fixed;inset:0;background:var(--kg-overlay);z-index:100;display:flex;align-items:flex-end;justify-content:center;animation:fadeIn .2s}
+.modal-sh{
+  background:var(--kg-surface);
+  border-radius:1.75rem 1.75rem 0 0;
+  padding:clamp(1rem, 4vw, 1.35rem);
+  padding-bottom:max(2rem,calc(1rem + env(safe-area-inset-bottom,0px)));
+  width:100%;
+  max-width:var(--kg-app-max);
+  margin:0 auto;
+  animation:slideUp .3s cubic-bezier(.34,1.56,.64,1);
+  max-height:88vh;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+.handle{width:2.5rem;height:0.25rem;background:var(--kg-border);border-radius:50px;margin:0 auto 1rem}
+
+.pill{display:inline-flex;align-items:center;gap:0.2rem;border-radius:50px;padding:0.2rem 0.65rem;font-weight:800;font-size:clamp(0.7rem, 2vw, 0.8rem)}
+.sb{background:var(--kg-gold-light);color:var(--kg-gold)}
+.prog-bar{background:var(--kg-border-light);border-radius:50px;overflow:hidden}
+.prog-fill{height:100%;border-radius:50px;transition:width .7s cubic-bezier(.34,1.56,.64,1)}
+.toast{
+  position:fixed;
+  top:max(3.25rem,calc(env(safe-area-inset-top,0px) + 0.75rem));
+  left:50%;
+  transform:translateX(-50%);
+  width:calc(100% - 1.5rem);
+  max-width:25rem;
+  background:var(--kg-primary-dark);
+  color:#fff;
+  padding:0.75rem 1rem;
+  border-radius:1rem;
+  font-weight:800;
+  font-size:clamp(0.8rem, 2vw, 0.9rem);
+  z-index:300;
+  animation:toastIn .35s cubic-bezier(.34,1.56,.64,1);
+  box-shadow:0 0.375rem 1.5rem rgba(0,0,0,.3);
+  line-height:1.4;
+}
+.confp{position:fixed;border-radius:0.2rem;animation:cfFall linear forwards;z-index:999;pointer-events:none}
+.badge{position:absolute;top:0;right:8%;background:var(--kg-error);color:#fff;border-radius:50%;width:clamp(0.9rem, 3vw, 1rem);height:clamp(0.9rem, 3vw, 1rem);font-size:clamp(0.5rem, 1.5vw, 0.6rem);font-weight:900;display:flex;align-items:center;justify-content:center}
+.widget{background:linear-gradient(135deg,#F0FAE6,#EBF8FF);border-radius:1.125rem;padding:0.75rem;margin:0 0 0.75rem;border:2px solid var(--kg-border);width:100%}
+
+.logout-btn{
+  position:absolute;
+  top:max(1rem,calc(env(safe-area-inset-top,2.75rem) - 0.25rem));
+  right:1rem;
+  background:rgba(255,255,255,.22);
+  border:1.5px solid rgba(255,255,255,.4);
+  border-radius:50%;
+  width:clamp(2rem, 6vw, 2.5rem);
+  height:clamp(2rem, 6vw, 2.5rem);
+  display:flex;align-items:center;justify-content:center;
+  font-size:clamp(0.85rem, 2.5vw, 1rem);
+  cursor:pointer;
+  color:#fff;
+  z-index:10;
+}
+
+input,select,textarea{font-family:'Nunito',sans-serif;outline:none;font-size:1rem!important;-webkit-appearance:none}
+::-webkit-scrollbar{display:none}
+
+@keyframes pop{0%{transform:scale(.4);opacity:0}70%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}}
+@keyframes slideUp{from{transform:translateY(40px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes toastIn{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes cfFall{0%{transform:translateY(-30px) rotate(0deg);opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+@keyframes spin{0%{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes levelUp{0%{transform:scale(0) rotate(-180deg);opacity:0}80%{transform:scale(1.15) rotate(5deg)}100%{transform:scale(1) rotate(0);opacity:1}}

@@ -121,283 +121,13 @@ function subscribeAppState(familyId, cb) {
   return onSnapshot(doc(db,"appData",familyId),(s)=>{ if(s.exists()) cb(s.data()); });
 }
 
-import { TH, PALETTE, CAT_CLR, STARS_PER_EURO, DAY_LABELS, DAY_FULL, ACHIEV, PRIVILEGES, INIT_TASKS, RELATIONSHIP_LABELS, KID_COLORS } from "./constants";
+import { TH, PALETTE, CAT_CLR, STARS_PER_EURO, DAY_LABELS, DAY_FULL, ACHIEV, INIT_TASKS, RELATIONSHIP_LABELS, KID_COLORS } from "./constants";
 import { getTodayIdx, taskActiveOn, taskActiveToday, calcAge, getLevel, getNextLevel, getStreakMult, fmt, isToday, approvedStars, availableStars, pendingStars, totalEuros, paidOut, balance, kidName, checkNewAchievements, computeStreak, getKidColor, mkKid, initState } from "./utils";
+import { reducer } from "./state";
+import { Confetti, Avatar, ProgressBar, StarBadge, HomeWidget } from "./components/ui.jsx";
 
 // Escala en rem para que tipografía y espaciado sigan el tamaño base responsive (index.css)
 const rem = (px) => `${Number(px) / 16}rem`;
-
-// ═══════════════════════════════════════════════════════════════════════
-// REDUCER
-// ═══════════════════════════════════════════════════════════════════════
-function reducer(st, a) {
-  switch(a.type) {
-    case "AUTH_LOGIN": return { ...st, screen: (a.account.role==="father"||a.account.role==="mother"||a.account.role==="parent")?"parent":"child", loggedAccount: a.account, activeKid: a.account.kidId||null, actingAs: (a.account.role==="father"||a.account.role==="mother") ? { role: a.account.role } : { role: "child", kidId: a.account.kidId } };
-    case "AUTH_LOGOUT": return { ...initState(), screen:"auth" };
-    case "LINK_ACCOUNT_DONE": return { ...initState(), ...a.saved, screen: "whoIsUsing", loggedAccount: a.linkData, actingAs: (a.linkData.role==="father"||a.linkData.role==="mother") ? { role: a.linkData.role } : { role: "child", kidId: a.linkData.kidId }, activeKid: a.linkData.kidId || null };
-    case "SET_ONBOARDING_STEP": return { ...st, onboardingStep: a.step };
-    case "ONBOARDING_FINISH": return { ...a.state };
-    case "SET_ACTING_AS": return { ...st, actingAs: a.actingAs, screen: a.screen || st.screen, activeKid: a.activeKid !== undefined ? a.activeKid : st.activeKid };
-    case "NAV": return { ...st, screen:a.screen, activeKid:a.kid||st.activeKid };
-    case "SET_CHILD_TAB": return { ...st, childTab:a.tab };
-    case "SET_PARENT_TAB": return { ...st, parentTab:a.tab };
-    case "OPEN_MODAL": return { ...st, modal:a.modal };
-    case "CLOSE_MODAL": return { ...st, modal:null };
-    case "CLEAR_TOAST": return { ...st, toast:null };
-    case "CLEAR_CONFETTI": return { ...st, confetti:false };
-    case "TOAST": return { ...st, toast:a.msg };
-
-    case "SET_KID_PHOTO": return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], photo:a.photo } } };
-    case "SET_PARENT_PHOTO": return { ...st, parents:{ ...st.parents, [a.parentRole]:{ ...st.parents[a.parentRole], photo:a.photo } } };
-    case "SET_KID_INFO": {
-      const kid = st.kids[a.kidId];
-      return {
-        ...st,
-        kids:{
-          ...st.kids,
-          [a.kidId]:{
-            ...kid,
-            ...(a.name !== undefined && { name: a.name }),
-            ...(a.dob !== undefined && { dob: a.dob }),
-            ...(a.email !== undefined && { email: a.email }),
-            profile:{
-              ...(kid.profile||{}),
-              grade:a.grade !== undefined ? a.grade : (kid.profile?.grade||""),
-              strengths:a.strengths !== undefined ? a.strengths : (kid.profile?.strengths||""),
-              focusAreas:a.focusAreas !== undefined ? a.focusAreas : (kid.profile?.focusAreas||""),
-            },
-          },
-        },
-      };
-    }
-    case "SET_PARENT_NAME": return { ...st, parents:{ ...st.parents, [a.parentRole]:{ ...st.parents[a.parentRole], name:a.name } } };
-    case "SET_PARENT_EMAIL": return { ...st, parents:{ ...st.parents, [a.parentRole]:{ ...st.parents[a.parentRole], email:a.email } } };
-    case "SET_PARENT_FCM_TOKEN": return { ...st, parentFcmTokens:{ ...st.parentFcmTokens, [a.parentRole]:a.token } };
-
-    case "COMPLETE_TASK": {
-      const { kidId, taskId } = a;
-      const kidPrev0 = st.kids[kidId];
-      const existing = kidPrev0?.completions?.[taskId];
-      if (existing?.done && isToday(existing.date)) return st; // ya completada hoy, ignorar doble clic
-      const task = st.tasks.find(t=>t.id===taskId);
-      const mult = getStreakMult(kidPrev0.stats.streak||0);
-      const comp = { done:true, approved:false, evidence:null, photoUrl:null, date:new Date().toISOString(), mult };
-      const dateKey = new Date().toISOString().slice(0,10);
-      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
-      const kidPrev = kidPrev0;
-      const dayLog = kidPrev.activityLog?.[dateKey] || [];
-      const entry = { id:Date.now(), type:"taskDone", taskId, taskName:task?.name, time };
-      const newKid = {
-        ...kidPrev,
-        completions:{ ...kidPrev.completions, [taskId]:comp },
-        stats:{ ...kidPrev.stats, totalDone:(kidPrev.stats.totalDone||0)+1 },
-        activityLog:{ ...(kidPrev.activityLog||{}), [dateKey]:[entry,...dayLog] },
-      };
-      const notif = { id:Date.now(), kidId, taskId, time:new Date().toLocaleTimeString("es-ES"), read:false, type:"task" };
-      return { ...st, kids:{ ...st.kids, [kidId]:newKid }, notifications:[notif,...st.notifications],
-        toast:`✅ ${task?.name} enviada para aprobación` };
-    }
-
-    case "SUBMIT_EVIDENCE": {
-      const { kidId, taskId, evidence, photoUrl } = a;
-      const comp = { ...st.kids[kidId].completions[taskId], evidence, photoUrl };
-      return { ...st, kids:{ ...st.kids, [kidId]:{ ...st.kids[kidId], completions:{ ...st.kids[kidId].completions, [taskId]:comp } } },
-        modal:null, toast:"📤 Evidencia enviada a papá/mamá" };
-    }
-
-    case "APPROVE_TASK": {
-      const { kidId, taskId, notifId, message, approvedBy } = a;
-      const task = st.tasks.find(t=>t.id===taskId);
-      const comp = { ...st.kids[kidId].completions[taskId], approved:true, evidence:null, photoUrl:null, approvedBy: approvedBy||"parent" };
-      const effStars = Math.ceil((task?.stars||0) * (comp.mult && comp.mult>1 ? comp.mult : 1));
-      const kidPrev = st.kids[kidId];
-      const dateKey = new Date().toISOString().slice(0,10);
-      const approvedCompletions = [...(kidPrev.approvedCompletions||[]), { taskId, date: dateKey, stars: effStars }];
-      let kid = {
-        ...kidPrev,
-        completions:{ ...kidPrev.completions, [taskId]:comp },
-        approvedCompletions,
-        stats:{ ...kidPrev.stats, streak: computeStreak({ ...kidPrev, approvedCompletions }) },
-      };
-      // Add encouragement message if provided
-      if(message) kid = { ...kid, messages:[{ id:Date.now(), from:"parent", text:message, date:new Date().toLocaleTimeString("es-ES"), read:false },...kid.messages] };
-      // Check achievements
-      const newAch = checkNewAchievements(kid, st.tasks);
-      let bonusAdded=0, achToast="";
-      if(newAch.length>0) {
-        bonusAdded=newAch.reduce((a,b)=>a+b.bonus,0);
-        kid={ ...kid, achievements:[...kid.achievements,...newAch.map(a=>a.id)], bonusStars:kid.bonusStars+bonusAdded };
-        achToast=` 🏅 ¡${newAch[0].label}! +${bonusAdded}⭐`;
-      }
-      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
-      const dayLog = kid.activityLog?.[dateKey] || [];
-      const entry = { id:Date.now(), type:"taskApproved", taskId, taskName:task?.name, stars:effStars, time };
-      kid = { ...kid, activityLog:{ ...(kid.activityLog||{}), [dateKey]:[entry,...dayLog] } };
-      const newNotifs=st.notifications.map(n=>n.id===notifId?{...n,read:true}:n);
-      const logEntry={ id:Date.now(), kidId, taskId, taskName:task?.name, stars:effStars, date:new Date().toLocaleDateString("es-ES"), approved:true, approvedBy: approvedBy||"parent" };
-      return { ...st, kids:{ ...st.kids, [kidId]:kid }, notifications:newNotifs, confetti:true,
-        approvalLog:[logEntry,...st.approvalLog],
-        toast:`⭐ +${effStars}${bonusAdded>0?`+${bonusAdded}bonus`:""} estrellas para ${kidName(st.kids[kidId],kidId)}!${achToast}` };
-    }
-
-    case "REJECT_TASK": {
-      const { kidId, taskId, notifId, rejectedBy, message } = a;
-      const task = st.tasks.find(t=>t.id===taskId);
-      const comp = { ...st.kids[kidId].completions };
-      delete comp[taskId];
-      const newNotifs=st.notifications.filter(n=>n.id!==notifId);
-      const whoRej = rejectedBy==="mother"?"Mamá":"Papá";
-      let kid = { ...st.kids[kidId], completions:comp };
-      if (message && message.trim()) {
-        const msgText = `${whoRej} rechazó "${task?.name||"la tarea"}": ${message.trim()}`;
-        kid = { ...kid, messages:[{ id:Date.now(), from:"parent", text:msgText, date:new Date().toLocaleTimeString("es-ES"), read:false },...kid.messages] };
-      }
-      const logEntry={ id:Date.now(), kidId, taskId, taskName:task?.name, date:new Date().toLocaleDateString("es-ES"), approved:false, rejectedBy: rejectedBy||"parent" };
-      return { ...st, kids:{ ...st.kids, [kidId]:kid },
-        notifications:newNotifs, approvalLog:[logEntry,...st.approvalLog], modal:null, toast:"❌ Tarea rechazada" };
-    }
-
-    case "ADD_TASK": return { ...st, tasks:[...st.tasks, {...a.task,id:st.nextId}], nextId:st.nextId+1, modal:null, toast:`✅ Tarea "${a.task.name}" creada`, tasksVersion:(st.tasksVersion||0)+1 };
-    case "EDIT_TASK": return { ...st, tasks:st.tasks.map(t=>t.id===a.task.id?a.task:t), modal:null, toast:"✅ Tarea actualizada", tasksVersion:(st.tasksVersion||0)+1 };
-    case "DELETE_TASK": return { ...st, tasks:st.tasks.filter(t=>t.id!==a.taskId), modal:null, toast:"🗑️ Tarea eliminada", tasksVersion:(st.tasksVersion||0)+1 };
-    case "SET_ROLE_PIN": return { ...st, rolePins:{ ...(st.rolePins||{}), [a.roleKey]:a.pin } };
-    case "RESET_ROLE_PIN": return { ...st, rolePins:{ ...(st.rolePins||{}), [a.roleKey]:null } };
-
-    case "ADD_PAYMENT": {
-      const p={ id:Date.now(), amount:a.amount, note:a.note, date:new Date().toLocaleDateString("es-ES") };
-      const dateKey = new Date().toISOString().slice(0,10);
-      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
-      const kidPrev = st.kids[a.kidId];
-      const dayLog = kidPrev.activityLog?.[dateKey] || [];
-      const entry = { id:Date.now(), type:"payment", amount:a.amount, note:a.note, time };
-      const kid = {
-        ...kidPrev,
-        payments:[...kidPrev.payments,p],
-        activityLog:{ ...(kidPrev.activityLog||{}), [dateKey]:[entry,...dayLog] },
-      };
-      return { ...st, kids:{ ...st.kids, [a.kidId]:kid },
-        modal:null, toast:`💶 Entregado ${a.amount}€ a ${kidName(st.kids[a.kidId],a.kidId)}` };
-    }
-
-    case "ADD_WISH": {
-      const w={ id:Date.now(), name:a.name, cost:a.cost, emoji:a.emoji, approved:false, denied:false };
-      const dateKey = new Date().toISOString().slice(0,10);
-      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
-      const kidPrev = st.kids[a.kidId];
-      const dayLog = kidPrev.activityLog?.[dateKey] || [];
-      const entry = { id:Date.now(), type:"wishAdded", name:a.name, cost:a.cost, time };
-      const kid = {
-        ...kidPrev,
-        wishlist:[...kidPrev.wishlist,w],
-        activityLog:{ ...(kidPrev.activityLog||{}), [dateKey]:[entry,...dayLog] },
-      };
-      return { ...st, kids:{ ...st.kids, [a.kidId]:kid },
-        modal:null, toast:"🌠 Deseo añadido a tu lista" };
-    }
-    case "APPROVE_WISH": {
-      const wl=st.kids[a.kidId].wishlist.map(w=>w.id===a.wishId?{...w,approved:true}:w);
-      const dateKey = new Date().toISOString().slice(0,10);
-      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
-      const kidPrev = st.kids[a.kidId];
-      const wish = kidPrev.wishlist.find(w=>w.id===a.wishId);
-      const dayLog = kidPrev.activityLog?.[dateKey] || [];
-      const entry = { id:Date.now(), type:"wishApproved", name:wish?.name, cost:wish?.cost, time };
-      const kid={
-        ...kidPrev,
-        wishlist:wl,
-        stats:{ ...kidPrev.stats, wishApproved:(kidPrev.stats.wishApproved||0)+1 },
-        activityLog:{ ...(kidPrev.activityLog||{}), [dateKey]:[entry,...dayLog] },
-      };
-      return { ...st, kids:{ ...st.kids, [a.kidId]:kid }, modal:null, toast:"✅ ¡Deseo aprobado!" };
-    }
-    case "DENY_WISH": {
-      const wl=st.kids[a.kidId].wishlist.map(w=>w.id===a.wishId?{...w,denied:true}:w);
-      const dateKey = new Date().toISOString().slice(0,10);
-      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
-      const kidPrev = st.kids[a.kidId];
-      const wish = kidPrev.wishlist.find(w=>w.id===a.wishId);
-      const dayLog = kidPrev.activityLog?.[dateKey] || [];
-      const entry = { id:Date.now(), type:"wishDenied", name:wish?.name, cost:wish?.cost, time };
-      const kid={
-        ...kidPrev,
-        wishlist:wl,
-        activityLog:{ ...(kidPrev.activityLog||{}), [dateKey]:[entry,...dayLog] },
-      };
-      return { ...st, kids:{ ...st.kids, [a.kidId]:kid }, modal:null, toast:"❌ Deseo denegado" };
-    }
-
-    case "REDEEM_PRIVILEGE": {
-      const priv=PRIVILEGES.find(p=>p.id===a.privId);
-      if(!priv) return st;
-      const kid=st.kids[a.kidId];
-      if(availableStars(kid,st.tasks)<priv.cost) return { ...st, toast:"⭐ No tienes suficientes estrellas" };
-      const dateKey = new Date().toISOString().slice(0,10);
-      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
-      const dayLog = kid.activityLog?.[dateKey] || [];
-      const entry = { id:Date.now(), type:"privilege", name:priv.name, cost:priv.cost, time };
-      const newKid={
-        ...kid,
-        spentStars:kid.spentStars+priv.cost,
-        privileges:[...kid.privileges,{id:Date.now(),item:priv,date:new Date().toLocaleDateString("es-ES")}],
-        activityLog:{ ...(kid.activityLog||{}), [dateKey]:[entry,...dayLog] },
-      };
-      const notif={ id:Date.now(), kidId:a.kidId, type:"privilege", privName:priv.name, time:new Date().toLocaleTimeString("es-ES"), read:false };
-      return { ...st, kids:{ ...st.kids, [a.kidId]:newKid }, notifications:[notif,...st.notifications],
-        modal:null, confetti:true, toast:`🎉 ¡Canjeado: ${priv.name}!` };
-    }
-
-    case "ADD_GRATITUDE": {
-      const g={ id:Date.now(), date:new Date().toLocaleDateString("es-ES"), text:a.text };
-      const dateKey = new Date().toISOString().slice(0,10);
-      const time = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
-      const kidPrev = st.kids[a.kidId];
-      const dayLog = kidPrev.activityLog?.[dateKey] || [];
-      const entry = { id:Date.now(), type:"gratitude", text:a.text, time };
-      const kid = {
-        ...kidPrev,
-        gratitude:[g,...kidPrev.gratitude],
-        activityLog:{ ...(kidPrev.activityLog||{}), [dateKey]:[entry,...dayLog] },
-      };
-      return { ...st, kids:{ ...st.kids, [a.kidId]:kid },
-        modal:null, toast:"📝 Gratitud guardada ❤️" };
-    }
-
-    case "SEND_MESSAGE": {
-      const msg={ id:Date.now(), from:"parent", text:a.text, date:new Date().toLocaleTimeString("es-ES"), read:false };
-      const dateKey = new Date().toISOString().slice(0,10);
-      const time = msg.date;
-      const kidPrev = st.kids[a.kidId];
-      const dayLog = kidPrev.activityLog?.[dateKey] || [];
-      const entry = { id:Date.now(), type:"message", text:a.text, time };
-      const kid = {
-        ...kidPrev,
-        messages:[msg,...kidPrev.messages],
-        activityLog:{ ...(kidPrev.activityLog||{}), [dateKey]:[entry,...dayLog] },
-      };
-      return { ...st, kids:{ ...st.kids, [a.kidId]:kid },
-        modal:null, toast:`💬 Mensaje enviado a ${kidName(st.kids[a.kidId],a.kidId)}` };
-    }
-    case "READ_MESSAGES": {
-      const msgs=st.kids[a.kidId].messages.map(m=>({...m,read:true}));
-      return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], messages:msgs } } };
-    }
-    case "EDIT_MESSAGE": {
-      const msgs=st.kids[a.kidId].messages.map(m=>m.id===a.messageId?{...m,text:a.text}:m);
-      return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], messages:msgs } }, modal:null, toast:"✅ Mensaje actualizado" };
-    }
-    case "DELETE_MESSAGE": {
-      const msgs=st.kids[a.kidId].messages.filter(m=>m.id!==a.messageId);
-      return { ...st, kids:{ ...st.kids, [a.kidId]:{ ...st.kids[a.kidId], messages:msgs } }, modal:null, toast:"🗑️ Mensaje eliminado" };
-    }
-
-    case "ADD_CHALLENGE": {
-      const ch={ id:Date.now(), ...a.challenge, myCount:0, theirCount:0, winner:null };
-      return { ...st, challenges:[...st.challenges,ch], modal:null, toast:"⚔️ ¡Reto creado!" };
-    }
-
-    default: return st;
-  }
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // GLOBAL STYLES
@@ -576,85 +306,6 @@ input,select,textarea{font-family:'Nunito',sans-serif;outline:none;font-size:1re
 @keyframes levelUp{0%{transform:scale(0) rotate(-180deg);opacity:0}80%{transform:scale(1.15) rotate(5deg)}100%{transform:scale(1) rotate(0);opacity:1}}
 `;
 
-// ═══════════════════════════════════════════════════════════════════════
-// SHARED COMPONENTS
-// ═══════════════════════════════════════════════════════════════════════
-function Confetti() {
-  const ps=Array.from({length:40},(_,i)=>({ id:i, color:["#FF85C2","#FFB800","#8DC63F","#5BC8F5","#FF6B6B","#A78BFA"][i%6], left:Math.random()*96, delay:Math.random()*.9, dur:1.6+Math.random()*1.4, size:7+Math.random()*9 }));
-  return <>{ps.map(p=><div key={p.id} className="confp" style={{background:p.color,left:`${p.left}%`,top:"-20px",width:p.size,height:p.size,animationDelay:`${p.delay}s`,animationDuration:`${p.dur}s`}}/>)}</>;
-}
-
-function Avatar({ photo, emoji, size=52, color="#ccc", onClick }) {
-  const ref=useRef();
-  const s=rem(size);
-  const sNum=Number(size);
-  async function handleFile(e) {
-    const f=e.target.files?.[0];
-    if(!f||!f.type.startsWith("image/")||!onClick)return;
-    try {
-      const dataUrl=await compressImage(f,400,0.7);
-      onClick(dataUrl);
-    }catch(err){console.warn(err);}
-    e.target.value="";
-  }
-  return (
-    <div style={{position:"relative",width:s,height:s,cursor:onClick?"pointer":"default"}} onClick={()=>onClick&&ref.current?.click()}>
-      <div style={{width:s,height:s,borderRadius:"50%",background:photo?"none":`${color}33`,border:"3px solid",borderColor:color,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",boxSizing:"border-box"}}>
-        {photo?<img src={photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:rem(sNum*.45)}}>{emoji}</span>}
-      </div>
-      {onClick&&<div style={{position:"absolute",bottom:0,right:0,background:color,borderRadius:"50%",width:rem(22),height:rem(22),display:"flex",alignItems:"center",justifyContent:"center",fontSize:rem(11),color:"#fff",border:"2px solid #fff"}}>📷</div>}
-      {onClick&&<input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>}
-    </div>
-  );
-}
-
-function ProgressBar({ value, max, color, height=8 }) {
-  const pct=max>0?Math.min((value/max)*100,100):0;
-  return <div className="prog-bar" style={{height:rem(height)}}><div className="prog-fill" style={{width:`${pct}%`,height:"100%",background:color}}/></div>;
-}
-
-function StarBadge({ n, size="sm" }) {
-  return <span className={`pill sb`} style={{fontSize:size==="lg"?rem(15):rem(11),padding:size==="lg"?rem(5)+" "+rem(14):rem(3)+" "+rem(10)}}>{"⭐".repeat(Math.min(n,3))}{n>3?` x${n}`:""}</span>;
-}
-
-// iOS Widget simulation
-function HomeWidget({ kid, kidId, tasks }) {
-  if(!kid) return null;
-  const as=approvedStars(kid,tasks);
-  const lv=getLevel(as);
-  const th=getKidColor(kidId, 0);
-  const todayT=tasks.filter(t=>taskActiveToday(t.days));
-  const doneT=todayT.filter(t=>{
-    const c=kid.completions[t.id];
-    return c?.done && isToday(c.date);
-  }).length;
-  return (
-    <div className="widget">
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-        <span style={{color:"#4A7A1E",fontSize:10,fontWeight:900,letterSpacing:1}}>KIDS GOALS</span>
-        <span style={{color:th.p,fontSize:10,fontWeight:900}}>{lv.icon} {lv.name}</span>
-      </div>
-      <div style={{display:"flex",gap:10}}>
-        <div style={{flex:1,background:"rgba(255,255,255,.06)",borderRadius:12,padding:10,textAlign:"center"}}>
-          <div style={{color:"#666",fontSize:9,fontWeight:700}}>⭐ HOY</div>
-          <div style={{color:th.p,fontSize:22,fontWeight:900}}>{doneT}/{todayT.length}</div>
-        </div>
-        <div style={{flex:1,background:"rgba(255,255,255,.06)",borderRadius:12,padding:10,textAlign:"center"}}>
-          <div style={{color:"#666",fontSize:9,fontWeight:700}}>ESTRELLAS</div>
-          <div style={{color:"#CC8800",fontSize:22,fontWeight:900}}>{as}</div>
-        </div>
-        <div style={{flex:1,background:"rgba(255,255,255,.06)",borderRadius:12,padding:10,textAlign:"center"}}>
-          <div style={{color:"#666",fontSize:9,fontWeight:700}}>💶 BALANCE</div>
-          <div style={{color:"#4A7A1E",fontSize:22,fontWeight:900}}>{balance(kid,tasks)}€</div>
-        </div>
-      </div>
-      <div style={{marginTop:8}}>
-        <ProgressBar value={as%STARS_PER_EURO} max={STARS_PER_EURO} color={th.p} height={5}/>
-        <div style={{color:"#666",fontSize:9,marginTop:2,fontWeight:600}}>Próximo euro: {as%STARS_PER_EURO}/{STARS_PER_EURO} ⭐</div>
-      </div>
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // AUTH SCREEN — Apple Sign In with Family Sharing
@@ -1223,7 +874,7 @@ function TaskCard({ task, comp, kidId, th, dispatch, idx, mult }) {
         <div style={{width:4,height:48,background:CAT_CLR[task.cat]||th.p,borderRadius:4,flexShrink:0}}/>
         <div style={{fontSize:26,lineHeight:1}}>{task.emoji}</div>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontWeight:800,fontSize:13,color:"#1a1a1a",textDecoration:approved?"line-through":"none",opacity:approved?.55:1}}>{task.name}</div>
+          <div style={{fontWeight:800,fontSize:13,color:"#1a1a1a",textDecoration:approved?"line-through":"none",opacity:approved ? 0.55 : 1}}>{task.name}</div>
           <div style={{display:"flex",gap:5,marginTop:3,flexWrap:"wrap"}}>
             <span style={{background:"#f0f0f0",borderRadius:50,padding:"1px 7px",fontSize:9,fontWeight:700,color:"#777"}}>⏱{task.dur}</span>
             <span style={{background:"#f0f0f0",borderRadius:50,padding:"1px 7px",fontSize:9,fontWeight:700,color:"#777"}}>🕐{task.time}</span>
@@ -2884,21 +2535,102 @@ export default function App() {
   // Loading spinner
   if (appLoading || authUser === undefined) {
     return (
-      <>
-        <style>{CSS}</style>
-        <div className="app"><div className="screen" style={{alignItems:"center",justifyContent:"center",overflowY:"auto",background:"linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 60%,#FFFBEA 100%)"}}>
-          <div style={{textAlign:"center"}}>
-            <div style={{fontSize:64,animation:"bounce 1s infinite"}}>🏠</div>
-            <div style={{fontWeight:900,color:"#4A7A1E",marginTop:12,fontSize:16}}>Cargando Kids Goals...</div>
+      <div className="app">
+        <div
+          className="screen"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "2rem 1.5rem",
+            background:
+              "linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 50%,#FFFBEA 100%)",
+            flex: 1,
+            minHeight: "100vh",
+          }}
+        >
+          <div
+            style={{
+              maxWidth: "22rem",
+              width: "100%",
+              textAlign: "center",
+              background: "rgba(255,255,255,0.9)",
+              borderRadius: "1.5rem",
+              padding: "1.75rem 1.5rem",
+              boxShadow: "0 18px 40px rgba(0,0,0,0.08)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "3.5rem",
+                marginBottom: "0.25rem",
+                animation: "bounce 1.4s infinite",
+              }}
+            >
+              🏠
+            </div>
+            <div
+              style={{
+                fontWeight: 900,
+                color: "#4A7A1E",
+                fontSize: "1rem",
+                letterSpacing: "0.14em",
+              }}
+            >
+              KIDS GOALS
+            </div>
+            <p
+              style={{
+                marginTop: "0.75rem",
+                marginBottom: "1.5rem",
+                color: "#666",
+                fontSize: "0.9rem",
+                fontWeight: 600,
+              }}
+            >
+              Preparando tus misiones y recompensas…
+            </p>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                padding: "0.5rem 0.9rem",
+                borderRadius: "999px",
+                background:
+                  "linear-gradient(135deg,rgba(141,198,63,0.09),rgba(91,200,245,0.09))",
+                border: "1px solid rgba(141,198,63,0.35)",
+              }}
+            >
+              <span
+                style={{
+                  width: "0.75rem",
+                  height: "0.75rem",
+                  borderRadius: "50%",
+                  border: "2px solid #8DC63F",
+                  borderTopColor: "transparent",
+                  animation: "spin 0.9s linear infinite",
+                }}
+              />
+              <span
+                style={{
+                  fontSize: "0.85rem",
+                  fontWeight: 800,
+                  color: "#4A7A1E",
+                }}
+              >
+                Cargando…
+              </span>
+            </div>
           </div>
-        </div></div>
-      </>
+        </div>
+      </div>
     );
   }
 
   return (
     <>
-      <style>{CSS}</style>
       <div className="app">
         {st.toast&&<div className="toast">{st.toast}</div>}
         {st.confetti&&<Confetti/>}
