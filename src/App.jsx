@@ -1153,6 +1153,7 @@ function KidHistory({ kid, th, filter="all", month }) {
   let entriesByDate = Object.entries(kid.activityLog||{});
   if (month) entriesByDate = entriesByDate.filter(([date])=>date.startsWith(month));
   entriesByDate = entriesByDate.sort((a,b)=>b[0].localeCompare(a[0]));
+  const [openDate, setOpenDate] = useState(entriesByDate[0]?.[0] || null);
   const matchesFilter = (it) => {
     if (filter==="all") return true;
     if (filter==="tasks")   return it.type==="taskDone"||it.type==="taskApproved";
@@ -1176,10 +1177,19 @@ function KidHistory({ kid, th, filter="all", month }) {
         :entriesByDate.map(([date,items])=>{
           const visibleItems = items.filter(matchesFilter);
           if (visibleItems.length===0) return null;
+          const isOpen = openDate === date;
           return (
             <div key={date} className="card" style={{marginBottom:8}}>
-              <div style={{fontSize:12,fontWeight:900,color:th.a,marginBottom:4}}>📅 {date}</div>
-              {visibleItems.map(it=>(
+              <div
+                style={{fontSize:12,fontWeight:900,color:th.a,marginBottom:isOpen?4:0,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
+                onClick={()=>setOpenDate(isOpen ? null : date)}
+              >
+                <span>📅 {date}</span>
+                <span style={{fontSize:11,color:"#999",fontWeight:700}}>
+                  {visibleItems.length} evento{visibleItems.length!==1?"s":""} {isOpen?"▴":"▾"}
+                </span>
+              </div>
+              {isOpen && visibleItems.map(it=>(
                 <div key={it.id} style={{display:"flex",gap:6,alignItems:"flex-start",padding:"4px 0",fontSize:12,borderBottom:"1px solid #f5f5f5"}}>
                   <div style={{width:18,textAlign:"center"}}>
                     {it.type==="taskDone"&&"⏳"}
