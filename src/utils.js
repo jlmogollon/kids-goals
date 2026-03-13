@@ -196,7 +196,7 @@ export function initState() {
     challenges: [],
     weeklyGoal: { target: 40, current: 0 },
     childTab: "hoy",
-    parentTab: "notifs",
+    parentTab: "inicio",
     modal: null,
     toast: null,
     confetti: false,

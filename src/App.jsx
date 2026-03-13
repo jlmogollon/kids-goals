@@ -684,11 +684,9 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
 
   const tabs=[
     {id:"hoy",icon:"📋",label:"Hoy"},
-    {id:"mensajes",icon:"💬",label:"Mensajes",badge:unreadMsgs},
+    {id:"premios",icon:"🛍️",label:"Premios"},
     {id:"logros",icon:"🏅",label:"Logros"},
-    {id:"tienda",icon:"🛍️",label:"Tienda"},
-    {id:"dinero",icon:"💶",label:"Dinero"},
-    {id:"mas",icon:"⋯",label:"Más"},
+    {id:"mensajes",icon:"💬",label:"Mensajes",badge:unreadMsgs},
   ];
 
   return (
@@ -745,11 +743,22 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
           </button>
         )}
         {st.childTab==="hoy"       && <ChildToday kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} mult={mult}/>}
-        {st.childTab==="mensajes"  && <ChildMensajes kidId={kidId} kid={kid} th={th} dispatch={dispatch}/>}
+        {st.childTab==="premios"   && (
+          <>
+            <ChildTienda kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} avail={avail}/>
+            <MoneyPanel
+              kidId={kidId}
+              kid={kid}
+              tasks={st.tasks}
+              th={th}
+              isParent={false}
+              dispatch={dispatch}
+              approvalLog={st.approvalLog}
+            />
+          </>
+        )}
         {st.childTab==="logros"    && <ChildLogros kid={kid} kidId={kidId} as={as} th={th}/>}
-        {st.childTab==="tienda"    && <ChildTienda kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} avail={avail}/>}
-        {st.childTab==="dinero"    && <MoneyPanel kidId={kidId} kid={kid} tasks={st.tasks} th={th} isParent={false} dispatch={dispatch} approvalLog={st.approvalLog}/>}
-        {st.childTab==="mas"       && <ChildMas kidId={kidId} kid={kid} st={st} th={th} dispatch={dispatch} challenges={st.challenges}/>}
+        {st.childTab==="mensajes"  && <ChildMensajes kidId={kidId} kid={kid} th={th} dispatch={dispatch}/>}
       </div>
 
       <div className="tab-bar">
@@ -1296,13 +1305,10 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
   const th = parentRole === "mother" ? { ...TH.parent, p: "#E91E8C", a: "#C2185B", l: "#FCE4EC", d: "#880E4F" } : TH.parent;
   const pendingN=st.notifications.filter(n=>!n.read);
   const tabs=[
-    {id:"notifs",icon:"🔔",label:"Alertas",badge:pendingN.length},
-    {id:"tareas",icon:"📋",label:"Tareas"},
-    {id:"mensajes",icon:"💬",label:"Mensajes"},
-    {id:"dinero",icon:"💶",label:"Dinero"},
-    {id:"ranking",icon:"🏆",label:"Ranking"},
-    {id:"historial",icon:"📆",label:"Historial"},
-    {id:"config",icon:"⚙️",label:"Config"},
+    {id:"inicio", icon:"🏠", label:"Inicio"},
+    {id:"aprobar", icon:"✅", label:"Aprobar", badge:pendingN.length},
+    {id:"tareas", icon:"📋", label:"Tareas"},
+    {id:"familia", icon:"👨‍👩‍👧", label:"Familia"},
   ];
 
   return (
@@ -1349,13 +1355,27 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
           </button>
         )}
 
-        {st.parentTab==="notifs"   && <ParentNotifs st={st} dispatch={dispatch} parentRole={parentRole}/>}
-        {st.parentTab==="tareas"   && <ParentTareas st={st} dispatch={dispatch}/>}
-        {st.parentTab==="mensajes" && <ParentMensajesYGratitud st={st} dispatch={dispatch}/>}
-        {st.parentTab==="dinero"   && <ParentDinero st={st} dispatch={dispatch}/>}
-        {st.parentTab==="ranking"  && <ParentRanking st={st} dispatch={dispatch}/>}
-        {st.parentTab==="historial"&& <ParentHistory st={st}/>}
-        {st.parentTab==="config"   && <ParentConfig st={st} dispatch={dispatch} parentRole={parentRole} currentParent={currentParent} familyId={roleData?.familyId}/>}
+        {st.parentTab==="inicio" && (
+          <>
+            <ParentRanking st={st} dispatch={dispatch}/>
+            <ParentDinero st={st} dispatch={dispatch}/>
+          </>
+        )}
+        {st.parentTab==="aprobar" && <ParentNotifs st={st} dispatch={dispatch} parentRole={parentRole}/>}
+        {st.parentTab==="tareas"  && <ParentTareas st={st} dispatch={dispatch}/>}
+        {st.parentTab==="familia" && (
+          <>
+            <ParentConfig
+              st={st}
+              dispatch={dispatch}
+              parentRole={parentRole}
+              currentParent={currentParent}
+              familyId={roleData?.familyId}
+            />
+            <ParentMensajesYGratitud st={st} dispatch={dispatch}/>
+            <ParentHistory st={st}/>
+          </>
+        )}
       </div>
 
       <div className="tab-bar">
