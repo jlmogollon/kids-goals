@@ -197,6 +197,7 @@ export function initState() {
     weeklyGoal: { target: 40, current: 0 },
     childTab: "hoy",
     parentTab: "inicio",
+    kidsOrder: [],
     modal: null,
     toast: null,
     confetti: false,

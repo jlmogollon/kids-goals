@@ -50,6 +50,22 @@ export function reducer(st, a) {
       return { ...st, childTab: a.tab };
     case "SET_PARENT_TAB":
       return { ...st, parentTab: a.tab };
+    case "REORDER_KIDS": {
+      const ids = Object.keys(st.kids || {});
+      if (!ids.length) return st;
+      const current = st.kidsOrder && st.kidsOrder.length
+        ? st.kidsOrder.filter((id) => st.kids[id])
+        : ids;
+      const from = a.fromIndex;
+      const to = a.toIndex;
+      if (from === to || from < 0 || to < 0 || from >= current.length || to >= current.length) {
+        return st;
+      }
+      const nextOrder = [...current];
+      const [moved] = nextOrder.splice(from, 1);
+      nextOrder.splice(to, 0, moved);
+      return { ...st, kidsOrder: nextOrder };
+    }
     case "OPEN_MODAL":
       return { ...st, modal: a.modal };
     case "CLOSE_MODAL":

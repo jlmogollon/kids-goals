@@ -89,6 +89,30 @@ export const PRIVILEGES = [
   { id:"p6", name:"Videojuego nuevo",     cost:80, emoji:"🎮", desc:"Un juego a elegir" },
 ];
 
+export const DEFAULT_CHALLENGES = [
+  {
+    id:"streak_biblia_7",
+    label:"¿Quién lee más días seguidos la Biblia?",
+    description:"Reto de 7 días leyendo la Biblia sin fallar.",
+    suggestedTaskId:1,
+    durationDays:7,
+  },
+  {
+    id:"higiene_perfecta",
+    label:"Higiene perfecta 7 días",
+    description:"Cepillarse los dientes y rutina de higiene todos los días durante una semana.",
+    suggestedTaskId:7,
+    durationDays:7,
+  },
+  {
+    id:"deberes_mes",
+    label:"Deberes sin fallar un mes",
+    description:"Hacer los deberes del cole todos los días de lunes a viernes durante 30 días.",
+    suggestedTaskId:6,
+    durationDays:30,
+  },
+];
+
 export const INIT_TASKS = [
   { id:1,  name:"Leer la Biblia",               days:"todos", time:"Tarde",               dur:"15 min", stars:2, emoji:"📖", cat:"espiritual", deadline:null, isSpecial:false },
   { id:2,  name:"Leer Devocional",              days:"todos", time:"Tarde",               dur:"5 min",  stars:2, emoji:"🙏", cat:"espiritual", deadline:null, isSpecial:false },

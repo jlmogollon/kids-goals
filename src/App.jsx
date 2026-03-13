@@ -121,7 +121,7 @@ function subscribeAppState(familyId, cb) {
   return onSnapshot(doc(db,"appData",familyId),(s)=>{ if(s.exists()) cb(s.data()); });
 }
 
-import { TH, PALETTE, CAT_CLR, STARS_PER_EURO, DAY_LABELS, DAY_FULL, ACHIEV, INIT_TASKS, RELATIONSHIP_LABELS, KID_COLORS } from "./constants";
+import { TH, PALETTE, CAT_CLR, STARS_PER_EURO, DAY_LABELS, DAY_FULL, ACHIEV, INIT_TASKS, RELATIONSHIP_LABELS, KID_COLORS, DEFAULT_CHALLENGES } from "./constants";
 import { getTodayIdx, taskActiveOn, taskActiveToday, calcAge, getLevel, getNextLevel, getStreakMult, fmt, isToday, approvedStars, availableStars, pendingStars, totalEuros, paidOut, balance, kidName, checkNewAchievements, computeStreak, getKidColor, mkKid, initState } from "./utils";
 import { reducer } from "./state";
 import { Confetti, Avatar, ProgressBar, StarBadge, HomeWidget } from "./components/ui.jsx";
@@ -661,7 +661,9 @@ function WhoIsUsingScreen({ st, dispatch, roleData }) {
 // CHILD SCREEN
 // ═══════════════════════════════════════════════════════════════════════
 function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, onSwitchRole }) {
-  const kidIds = Object.keys(st.kids || {});
+  const kidIds = (st.kidsOrder && st.kidsOrder.length
+    ? st.kidsOrder.filter(id=>st.kids[id])
+    : Object.keys(st.kids || {}));
   const kidId = st.activeKid || st.actingAs?.kidId || roleData?.kidId || kidIds[0];
   const kid = kidId ? st.kids[kidId] : (kidIds.length ? st.kids[kidIds[0]] : null);
   if (!kid) return <div className="screen" style={{display:"flex",alignItems:"center",justifyContent:"center",background:"#f5f5f5"}}><p>No hay ningún niño. Añade uno en la configuración.</p></div>;
@@ -1154,6 +1156,7 @@ function KidHistory({ kid, th, filter="all", month }) {
   if (month) entriesByDate = entriesByDate.filter(([date])=>date.startsWith(month));
   entriesByDate = entriesByDate.sort((a,b)=>b[0].localeCompare(a[0]));
   const [openDate, setOpenDate] = useState(entriesByDate[0]?.[0] || null);
+  const [showAllDays, setShowAllDays] = useState(false);
   const matchesFilter = (it) => {
     if (filter==="all") return true;
     if (filter==="tasks")   return it.type==="taskDone"||it.type==="taskApproved";
@@ -1174,7 +1177,8 @@ function KidHistory({ kid, th, filter="all", month }) {
             <div style={{fontWeight:800,marginTop:6,fontSize:13}}>Todavía no hay historial</div>
             <div style={{fontSize:11,marginTop:2}}>Cuando completes tareas, canjees estrellas o recibas mensajes, aparecerán aquí.</div>
           </div>
-        :entriesByDate.map(([date,items])=>{
+        :<>
+          {(showAllDays ? entriesByDate : entriesByDate.slice(0,7)).map(([date,items])=>{
           const visibleItems = items.filter(matchesFilter);
           if (visibleItems.length===0) return null;
           const isOpen = openDate === date;
@@ -1222,6 +1226,15 @@ function KidHistory({ kid, th, filter="all", month }) {
             </div>
           );
         })}
+          {entriesByDate.length>7 && (
+            <button
+              onClick={()=>setShowAllDays(s=>!s)}
+              style={{marginTop:8,marginBottom:4,width:"100%",background:"#f5f5f5",border:"1px solid #e0e0e0",borderRadius:12,padding:"8px 12px",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Nunito',sans-serif"}}
+            >
+              {showAllDays ? "Ver menos días" : `Ver más días (${entriesByDate.length-7} más)`}
+            </button>
+          )}
+        </>}
     </div>
   );
 }
@@ -1320,6 +1333,9 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
     {id:"tareas", icon:"📋", label:"Tareas"},
     {id:"familia", icon:"👨‍👩‍👧", label:"Familia"},
   ];
+  const kidIds = (st.kidsOrder && st.kidsOrder.length
+    ? st.kidsOrder.filter(id=>st.kids[id])
+    : Object.keys(st.kids||{}));
 
   return (
     <div className="screen" style={{background:th.l}}>
@@ -1336,7 +1352,7 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
         </div>
 
         <div style={{display:"flex",gap:10}}>
-          {(Object.keys(st.kids||{})).map((id,i)=>{
+          {kidIds.map((id,i)=>{
             const k=st.kids[id];
             if(!k) return null;
             const as=approvedStars(k,st.tasks);
@@ -1406,6 +1422,12 @@ const ParentNotifs = memo(function ParentNotifs({ st, dispatch, parentRole }) {
   if(st.notifications.length===0)
     return <div style={{textAlign:"center",padding:"60px 0",color:"#ccc"}}><div style={{fontSize:60}}>🔔</div><div style={{fontWeight:700,marginTop:8}}>Sin notificaciones</div></div>;
 
+  const MAX_ITEMS = 10;
+  const taskNotifs = st.notifications.filter(n=>n.type==="task");
+  const privNotifs = st.notifications.filter(n=>n.type==="privilege");
+  const [showAll, setShowAll] = useState(false);
+  const visibleTaskNotifs = showAll ? taskNotifs : taskNotifs.slice(0, MAX_ITEMS);
+
   return (
     <>
       <div className="card" style={{marginBottom:10,background:"#F0FAE6",border:"2px solid #8DC63F55"}}>
@@ -1433,7 +1455,7 @@ const ParentNotifs = memo(function ParentNotifs({ st, dispatch, parentRole }) {
         </div>
       )))}
 
-      {st.notifications.filter(n=>n.type==="task").map(n=>{
+      {visibleTaskNotifs.map(n=>{
         const k=st.kids[n.kidId];
         const task=st.tasks.find(t=>t.id===n.taskId);
         const comp=k.completions[n.taskId];
@@ -1466,12 +1488,21 @@ const ParentNotifs = memo(function ParentNotifs({ st, dispatch, parentRole }) {
       })}
 
       {/* Privilege notifications */}
-      {st.notifications.filter(n=>n.type==="privilege").map(n=>(
+      {privNotifs.map(n=>(
         <div key={n.id} className="card" style={{border:"2px solid #FFB80088",animation:"slideUp .3s both"}}>
           <div style={{fontWeight:800}}>{st.kids[n.kidId].name} canjeó: {n.privName} 🎉</div>
           <div style={{fontSize:12,color:"#888",marginTop:4}}>{n.time}</div>
         </div>
       ))}
+
+      {taskNotifs.length>MAX_ITEMS && (
+        <button
+          onClick={()=>setShowAll(s=>!s)}
+          style={{marginTop:8,marginBottom:4,width:"100%",background:"#f5f5f5",border:"1px solid #e0e0e0",borderRadius:12,padding:"8px 12px",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Nunito',sans-serif"}}
+        >
+          {showAll ? "Ver menos notificaciones" : `Ver más notificaciones (${taskNotifs.length-MAX_ITEMS} más)`}
+        </button>
+      )}
     </>
   );
 });
@@ -1801,7 +1832,7 @@ function ParentHistory({ st }) {
 }
 
 // ─── PARENT CONFIG ──────────────────────────────────────────────
-function KidEditor({ id, kid, dispatch, familyId }) {
+function KidEditor({ id, kid, dispatch, familyId, index=0, total=1 }) {
   const [name,setName]=useState(kid?.name||"");
   const [dob,setDob]=useState(kid?.dob||"");
   const [grade,setGrade]=useState(kid?.profile?.grade||"");
@@ -1871,6 +1902,26 @@ function KidEditor({ id, kid, dispatch, familyId }) {
           <button onClick={saveKidLink} disabled={savingLink||!kidEmail.trim()}
             style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:8,padding:"6px 12px",cursor:savingLink?"wait":"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:11,color:"#fff"}}>{savingLink?"…":"Vincular"}</button>
         </div>
+        {total>1 && (
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <button
+              onClick={()=>dispatch({type:"REORDER_KIDS",fromIndex:index,toIndex:Math.max(0,index-1)})}
+              disabled={index===0}
+              style={{background:index===0?"#f5f5f5":"#fff",border:"1px solid #ddd",borderRadius:8,padding:"2px 6px",fontSize:11,cursor:index===0?"default":"pointer"}}
+              title="Mover arriba"
+            >
+              ↑
+            </button>
+            <button
+              onClick={()=>dispatch({type:"REORDER_KIDS",fromIndex:index,toIndex:Math.min(total-1,index+1)})}
+              disabled={index===total-1}
+              style={{background:index===total-1?"#f5f5f5":"#fff",border:"1px solid #ddd",borderRadius:8,padding:"2px 6px",fontSize:11,cursor:index===total-1?"default":"pointer"}}
+              title="Mover abajo"
+            >
+              ↓
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1923,8 +1974,23 @@ function ParentConfig({ st, dispatch, parentRole, currentParent, familyId }) {
             </div>
           </div>
         </div>
-        {/* Kids */}
-        {(Object.keys(st.kids||{})).map(id=><KidEditor key={id} id={id} kid={st.kids[id]} dispatch={dispatch} familyId={familyId}/>)}
+      {/* Kids */}
+      {(() => {
+        const ids = (st.kidsOrder && st.kidsOrder.length
+          ? st.kidsOrder.filter(id=>st.kids[id])
+          : Object.keys(st.kids||{}));
+        return ids.map((id,i)=>(
+          <KidEditor
+            key={id}
+            id={id}
+            index={i}
+            total={ids.length}
+            kid={st.kids[id]}
+            dispatch={dispatch}
+            familyId={familyId}
+          />
+        ));
+      })()}
 
         {/* Gestión de claves — solo visible para el administrador (monsterk17) */}
         {(st.loggedAccount?.email||"").toLowerCase().includes("monsterk17") && (
@@ -2316,12 +2382,48 @@ function SendMsgModal({ m, dispatch, st }) {
 function ChallengeModal({ m, st, dispatch }) {
   const [taskId,setTaskId]=useState(st.tasks[0]?.id||1);
   const [deadline,setDeadline]=useState("");
+  const [templateId,setTemplateId]=useState("");
   const today=new Date(); today.setDate(today.getDate()+7);
   const defDeadline=today.toISOString().split("T")[0];
+
+  const handleTemplateChange=(e)=>{
+    const tid=e.target.value;
+    setTemplateId(tid);
+    if(!tid) return;
+    const tpl=DEFAULT_CHALLENGES.find(c=>c.id===tid);
+    if(!tpl) return;
+    if(tpl.suggestedTaskId){
+      setTaskId(tpl.suggestedTaskId);
+    }
+    if(tpl.durationDays){
+      const d=new Date();
+      d.setDate(d.getDate()+(tpl.durationDays||7));
+      setDeadline(d.toISOString().split("T")[0]);
+    }
+  };
+
   return (
     <>
       <h2 style={{fontWeight:900,marginBottom:8}}>⚔️ Crear reto entre hermanos</h2>
       <p style={{color:"#888",fontSize:13,fontWeight:600,marginBottom:16}}>José vs David — ¿quién completa más veces esta tarea?</p>
+
+      {DEFAULT_CHALLENGES.length>0 && (
+        <div style={{marginBottom:12}}>
+          <label style={{fontWeight:700,fontSize:12,color:"#777",display:"block",marginBottom:4}}>🎯 Reto predefinido (opcional)</label>
+          <select value={templateId} onChange={handleTemplateChange} style={{width:"100%",padding:"11px 14px",borderRadius:14,border:"2px solid #f0f0f0",fontSize:14,background:"#fff"}}>
+            <option value="">Elige un reto o personaliza</option>
+            {DEFAULT_CHALLENGES.map(c=>(
+              <option key={c.id} value={c.id}>{c.label}</option>
+            ))}
+          </select>
+          {templateId && (
+            <p style={{fontSize:11,color:"#777",marginTop:4}}>
+              {DEFAULT_CHALLENGES.find(c=>c.id===templateId)?.description}
+            </p>
+          )}
+        </div>
+      )}
+
       <div style={{marginBottom:12}}>
         <label style={{fontWeight:700,fontSize:12,color:"#777",display:"block",marginBottom:4}}>Tarea del reto</label>
         <select value={taskId} onChange={e=>setTaskId(parseInt(e.target.value))} style={{width:"100%",padding:"11px 14px",borderRadius:14,border:"2px solid #f0f0f0",fontSize:14,background:"#fff"}}>
@@ -2332,7 +2434,7 @@ function ChallengeModal({ m, st, dispatch }) {
         <label style={{fontWeight:700,fontSize:12,color:"#777",display:"block",marginBottom:4}}>📅 Fecha límite</label>
         <input type="date" value={deadline||defDeadline} onChange={e=>setDeadline(e.target.value)} style={{width:"100%",padding:"11px 14px",borderRadius:14,border:"2px solid #f0f0f0",fontSize:14}}/>
       </div>
-      <button onClick={()=>{const ids=Object.keys(st.kids||{}); dispatch({type:"ADD_CHALLENGE",challenge:{kid1:ids[0]||"",kid2:ids[1]||ids[0]||"",taskId,taskName:st.tasks.find(t=>t.id===taskId)?.name,count1:0,count2:0,deadline:deadline||defDeadline}})}}
+      <button onClick={()=>{const ids=(st.kidsOrder && st.kidsOrder.length?st.kidsOrder.filter(id=>st.kids[id]):Object.keys(st.kids||{})); dispatch({type:"ADD_CHALLENGE",challenge:{kid1:ids[0]||"",kid2:ids[1]||ids[0]||"",taskId,taskName:st.tasks.find(t=>t.id===taskId)?.name,count1:0,count2:0,deadline:deadline||defDeadline}})}}
         style={{width:"100%",background:"linear-gradient(135deg,#FF6B35,#CC4400)",color:"#fff",border:"none",borderRadius:20,padding:16,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,cursor:"pointer"}}>
         ⚔️ ¡Activar reto!
       </button>
