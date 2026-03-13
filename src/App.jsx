@@ -778,7 +778,9 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
 
 // ─── CENTRO DE MENSAJES (niño) ──────────────────────────────────
 const ChildMensajes = memo(function ChildMensajes({ kidId, kid, th, dispatch }) {
+  const [showAll, setShowAll] = useState(false);
   const messages = [...(kid.messages||[])].reverse();
+  const visible = showAll ? messages : messages.slice(0,3);
   useEffect(() => {
     if ((kid.messages||[]).some(m=>!m.read)) dispatch({ type: "READ_MESSAGES", kidId });
   }, [kidId]);
@@ -792,12 +794,22 @@ const ChildMensajes = memo(function ChildMensajes({ kidId, kid, th, dispatch }) 
           <div style={{fontWeight:700,marginTop:8}}>Sin mensajes</div>
         </div>
       ) : (
-        messages.map(m=>(
+        <>
+        {visible.map(m=>(
           <div key={m.id} style={{padding:"12px 0",borderBottom:"1px solid #f0f0f0",background:m.read?"transparent":"#F0FAE6",borderRadius:12,marginBottom:8,padding:"12px 14px"}}>
             <div style={{fontSize:11,color:th.a,fontWeight:800,marginBottom:4}}>{m.date}</div>
             <div style={{fontSize:14,fontWeight:600,color:"#333",lineHeight:1.5,whiteSpace:"pre-wrap"}}>{m.text}</div>
           </div>
-        ))
+        ))}
+        {messages.length>3 && (
+          <button
+            onClick={()=>setShowAll(s=>!s)}
+            style={{marginTop:4,marginBottom:4,width:"100%",background:"#f5f5f5",border:"1px solid #e0e0e0",borderRadius:12,padding:"8px 12px",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Nunito',sans-serif"}}
+          >
+            {showAll ? "Ver menos mensajes" : `Ver más mensajes (${messages.length-3} más)`}
+          </button>
+        )}
+        </>
       )}
     </div>
   );
@@ -1517,6 +1529,7 @@ function ParentMensajesYGratitud({ st, dispatch }) {
         {(Object.keys(st.kids||{})).map((id,i)=>{
           const k=st.kids[id];
           const msgs=[...(k.messages||[])].reverse();
+          const limitedMsgs = msgs.slice(0,3);
           const kth=getKidColor(id,i);
           return (
             <div key={id} style={{marginBottom:20}}>
@@ -1524,18 +1537,25 @@ function ParentMensajesYGratitud({ st, dispatch }) {
               {msgs.length===0 ? (
                 <div style={{fontSize:12,color:"#aaa",padding:"8px 0"}}>Sin mensajes</div>
               ) : (
-                msgs.map(m=>(
-                  <div key={m.id} style={{background:"#f9f9f9",borderRadius:12,padding:"12px 14px",marginBottom:8,border:"1px solid #eee"}}>
-                    <div style={{fontSize:11,color:"#888",marginBottom:4}}>{m.date}</div>
-                    <div style={{fontSize:14,color:"#333",lineHeight:1.5,whiteSpace:"pre-wrap"}}>{m.text}</div>
-                    <div style={{display:"flex",gap:8,marginTop:10}}>
-                      <button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"editMessage",kidId:id,messageId:m.id,currentText:m.text}})}
-                        style={{background:"#FFB800",color:"#fff",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:800,cursor:"pointer"}}>✏️ Editar</button>
-                      <button onClick={()=>dispatch({type:"DELETE_MESSAGE",kidId:id,messageId:m.id})}
-                        style={{background:"#fff",color:PALETTE.error,border:`2px solid ${PALETTE.error}`,borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:800,cursor:"pointer"}}>🗑️ Eliminar</button>
+                <>
+                  {limitedMsgs.map(m=>(
+                    <div key={m.id} style={{background:"#f9f9f9",borderRadius:12,padding:"12px 14px",marginBottom:8,border:"1px solid #eee"}}>
+                      <div style={{fontSize:11,color:"#888",marginBottom:4}}>{m.date}</div>
+                      <div style={{fontSize:14,color:"#333",lineHeight:1.5,whiteSpace:"pre-wrap"}}>{m.text}</div>
+                      <div style={{display:"flex",gap:8,marginTop:10}}>
+                        <button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"editMessage",kidId:id,messageId:m.id,currentText:m.text}})}
+                          style={{background:"#FFB800",color:"#fff",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:800,cursor:"pointer"}}>✏️ Editar</button>
+                        <button onClick={()=>dispatch({type:"DELETE_MESSAGE",kidId:id,messageId:m.id})}
+                          style={{background:"#fff",color:PALETTE.error,border:`2px solid ${PALETTE.error}`,borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:800,cursor:"pointer"}}>🗑️ Eliminar</button>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                  {msgs.length>3 && (
+                    <div style={{fontSize:11,color:"#999",marginTop:4}}>
+                      Mostrando los 3 últimos mensajes (total: {msgs.length}).
+                    </div>
+                  )}
+                </>
               )}
             </div>
           );
@@ -1547,6 +1567,7 @@ function ParentMensajesYGratitud({ st, dispatch }) {
         {(Object.keys(st.kids||{})).map((id,i)=>{
           const k=st.kids[id];
           const grat=[...(k.gratitude||[])].reverse();
+          const limitedGrat = grat.slice(0,3);
           const kth=getKidColor(id,i);
           return (
             <div key={id} style={{marginBottom:16}}>
@@ -1554,12 +1575,19 @@ function ParentMensajesYGratitud({ st, dispatch }) {
               {grat.length===0 ? (
                 <div style={{fontSize:12,color:"#aaa",padding:"8px 0"}}>Aún no ha escrito gratitud</div>
               ) : (
-                grat.map(g=>(
-                  <div key={g.id} style={{background:`${kth.p}11`,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${kth.p}33`}}>
-                    <div style={{fontSize:11,color:kth.a,fontWeight:700,marginBottom:4}}>📅 {g.date}</div>
-                    <div style={{fontSize:14,color:"#333",lineHeight:1.5}}>{g.text}</div>
-                  </div>
-                ))
+                <>
+                  {limitedGrat.map(g=>(
+                    <div key={g.id} style={{background:`${kth.p}11`,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${kth.p}33`}}>
+                      <div style={{fontSize:11,color:kth.a,fontWeight:700,marginBottom:4}}>📅 {g.date}</div>
+                      <div style={{fontSize:14,color:"#333",lineHeight:1.5}}>{g.text}</div>
+                    </div>
+                  ))}
+                  {grat.length>3 && (
+                    <div style={{fontSize:11,color:"#999",marginTop:4}}>
+                      Mostrando los 3 últimos textos (total: {grat.length}).
+                    </div>
+                  )}
+                </>
               )}
             </div>
           );
