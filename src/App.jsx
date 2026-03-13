@@ -1021,6 +1021,8 @@ function ChildLogros({ kid, kidId, as, th }) {
 // ─── CHILD TIENDA ───────────────────────────────────────────────
 const ChildTienda = memo(function ChildTienda({ kidId, kid, tasks, th, dispatch, avail }) {
   const [activeTab,setActiveTab]=useState("privilegios");
+  const privileges = kid.privileges || [];
+  const wishlist = kid.wishlist || [];
 
   return (
     <>
@@ -1048,7 +1050,7 @@ const ChildTienda = memo(function ChildTienda({ kidId, kid, tasks, th, dispatch,
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           {PRIVILEGES.map(p=>{
             const canAfford=avail>=p.cost;
-            const owned=kid.privileges.filter(pr=>pr.item.id===p.id).length;
+            const owned=privileges.filter(pr=>pr.item.id===p.id).length;
             return (
               <div key={p.id} className="card" style={{textAlign:"center",border:canAfford?`2.5px solid ${th.p}66`:"2px solid #f0f0f0",opacity:canAfford?1:.65,padding:14}}>
                 <div style={{fontSize:36,marginBottom:6}}>{p.emoji}</div>
@@ -1072,9 +1074,9 @@ const ChildTienda = memo(function ChildTienda({ kidId, kid, tasks, th, dispatch,
             style={{width:"100%",background:`linear-gradient(135deg,${th.p},${th.a})`,color:"#fff",border:"none",borderRadius:20,padding:"14px",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:15,cursor:"pointer",marginBottom:12}}>
             🌠 Añadir nuevo deseo
           </button>
-          {kid.wishlist.length===0
+          {wishlist.length===0
             ?<div style={{textAlign:"center",padding:"40px 0",color:"#ccc"}}><div style={{fontSize:48}}>🌠</div><div style={{fontWeight:700,marginTop:8}}>Aún no tienes deseos</div><div style={{fontSize:13,marginTop:4}}>Añade lo que quieres conseguir</div></div>
-            :kid.wishlist.map(w=>(
+            :wishlist.map(w=>(
               <div key={w.id} className="card" style={{display:"flex",alignItems:"center",gap:12,border:w.approved?`2px solid #8DC63F`:w.denied?`2px solid ${PALETTE.error}`:"2px solid #f0f0f0",background:w.approved?"#F0FFF4":w.denied?"#FFF0F0":"#fff"}}>
                 <div style={{fontSize:30}}>{w.emoji||"🌟"}</div>
                 <div style={{flex:1}}>
@@ -1260,6 +1262,8 @@ const MoneyPanel = memo(function MoneyPanel({ kidId, kid, tasks, th, isParent, d
   const paid = paidOut(kid);
   const bal = te - paid;
   const kname=kid.name||kidName(kid,kidId);
+  const payments = kid.payments || [];
+  const logs = (approvalLog || []).filter(l=>l.kidId===kidId);
 
   return (
     <>
@@ -1295,11 +1299,11 @@ const MoneyPanel = memo(function MoneyPanel({ kidId, kid, tasks, th, isParent, d
 
       <div className="card">
         <h4 style={{fontWeight:900,marginBottom:10}}>Historial detallado</h4>
-        {kid.payments.length===0 && (approvalLog||[]).filter(l=>l.kidId===kidId).length===0
+        {payments.length===0 && logs.length===0
           ?<div style={{textAlign:"center",color:"#ccc",padding:"20px 0",fontWeight:700}}>Sin movimientos aún</div>
           :(
             <>
-              {(approvalLog||[]).filter(l=>l.kidId===kidId).slice(0,10).map(l=>(
+              {logs.slice(0,10).map(l=>(
                 <div key={l.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f5f5f5"}}>
                   <div>
                     <div style={{fontWeight:800,fontSize:13}}>{l.approved?"✅":"❌"} {l.taskName}</div>
@@ -1307,7 +1311,7 @@ const MoneyPanel = memo(function MoneyPanel({ kidId, kid, tasks, th, isParent, d
                   </div>
                 </div>
               ))}
-              {kid.payments.map((p,i)=>(
+              {payments.map((p,i)=>(
                 <div key={`pay-${i}`} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f5f5f5"}}>
                   <div>
                     <div style={{fontWeight:800,fontSize:13}}>💶 {p.amount}€ entregado</div>
