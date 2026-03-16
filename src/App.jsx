@@ -121,7 +121,7 @@ function subscribeAppState(familyId, cb) {
   return onSnapshot(doc(db,"appData",familyId),(s)=>{ if(s.exists()) cb(s.data()); });
 }
 
-import { TH, PALETTE, CAT_CLR, STARS_PER_EURO, DAY_LABELS, DAY_FULL, ACHIEV, INIT_TASKS, RELATIONSHIP_LABELS, KID_COLORS, DEFAULT_CHALLENGES, PRIVILEGES } from "./constants";
+import { TH, PALETTE, CAT_CLR, STARS_PER_EURO, DAY_LABELS, DAY_FULL, ACHIEV, INIT_TASKS, RELATIONSHIP_LABELS, KID_COLORS, DEFAULT_CHALLENGES, PRIVILEGES, AVATAR_ITEMS } from "./constants";
 import { getTodayIdx, taskActiveOn, taskActiveToday, calcAge, getLevel, getNextLevel, getStreakMult, fmt, isToday, approvedStars, availableStars, pendingStars, totalEuros, paidOut, balance, kidName, checkNewAchievements, computeStreak, getKidColor, mkKid, initState } from "./utils";
 import { reducer } from "./state";
 import { Confetti, Avatar, ProgressBar, StarBadge, HomeWidget } from "./components/ui.jsx";
@@ -226,11 +226,11 @@ body{background:var(--kg-bg);-webkit-text-size-adjust:100%}
 
 .card{
   background:var(--kg-surface);
-  border-radius:clamp(1rem, 4vw, 1.35rem);
-  box-shadow:0 0.125rem 0.875rem rgba(0,0,0,.07);
-  padding:clamp(0.75rem, 3vw, 1rem);
+  border-radius:clamp(0.9rem, 3.2vw, 1.25rem);
+  box-shadow:0 4px 14px rgba(0,0,0,.06);
+  padding:clamp(0.8rem, 3vw, 1rem);
   margin-bottom:0.75rem;
-  border:2px solid transparent;
+  border:1.5px solid var(--kg-border-light);
   width:100%;
 }
 
@@ -567,6 +567,8 @@ function WhoIsUsingScreen({ st, dispatch, roleData }) {
     return null;
   }
 
+  const currentEmail = (st.loggedAccount?.email || roleData?.email || "") || null;
+
   return (
     <div className="screen" style={{background:"linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 60%,#FFFBEA 100%)",alignItems:"center",justifyContent:"center",overflowY:"auto",padding:`${rem(32)} ${rem(20)}`}}>
       {!pinStep ? (
@@ -575,6 +577,11 @@ function WhoIsUsingScreen({ st, dispatch, roleData }) {
             <div style={{fontSize:rem(48),marginBottom:rem(8)}}>👋</div>
             <h2 style={{fontWeight:900,fontSize:rem(22),color:"#222",margin:0}}>¿Quién usa la app?</h2>
             <p style={{color:"#666",fontSize:rem(13),marginTop:rem(6),marginBottom:0}}>Elige tu perfil para continuar</p>
+            {currentEmail && (
+              <p style={{color:"#888",fontSize:rem(11),marginTop:rem(4),marginBottom:0}}>
+                Sesión iniciada como <strong>{currentEmail.toLowerCase()}</strong>
+              </p>
+            )}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(2, 1fr)",gap:rem(12),width:"100%"}}>
             {members.map(m => {
@@ -595,9 +602,15 @@ function WhoIsUsingScreen({ st, dispatch, roleData }) {
                   }
                   <div style={{textAlign:"center"}}>
                     <div style={{fontWeight:900,fontSize:rem(15),color:isCurrent?"#fff":"#222",lineHeight:1.2}}>{m.label}</div>
-                    <div style={{fontSize:rem(11),color:isCurrent?"rgba(255,255,255,0.75)":"#aaa",marginTop:rem(3)}}>
-                      {hasPinSet?"🔐 ":"🔓 "}{m.role==="father"?"Padre":m.role==="mother"?"Madre":"Niño/a"}
-                    </div>
+                    {m.role==="father"||m.role==="mother" ? (
+                      <div style={{fontSize:rem(11),color:isCurrent?"rgba(255,255,255,0.75)":"#aaa",marginTop:rem(3)}}>
+                        {hasPinSet?"🔐 ":"🔓 "}Perfil solo para adultos
+                      </div>
+                    ) : (
+                      <div style={{fontSize:rem(11),color:isCurrent?"rgba(255,255,255,0.75)":"#aaa",marginTop:rem(3)}}>
+                        {hasPinSet?"🔐 ":"🔓 "}Perfil de niño
+                      </div>
+                    )}
                   </div>
                 </button>
               );
@@ -688,7 +701,7 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
     {id:"hoy",icon:"📋",label:"Hoy"},
     {id:"premios",icon:"🛍️",label:"Premios"},
     {id:"logros",icon:"🏅",label:"Logros"},
-    {id:"mensajes",icon:"💬",label:"Mensajes",badge:unreadMsgs},
+    {id:"mas",icon:"➕",label:"Más",badge:unreadMsgs},
   ];
 
   return (
@@ -744,10 +757,10 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
             🔔 Activar notificaciones — recibirás avisos cuando papá/mamá apruebe tus tareas
           </button>
         )}
-        {st.childTab==="hoy"       && <ChildToday kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} mult={mult}/>}
+        {st.childTab==="hoy"       && <ChildToday kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} mult={mult} st={st}/>}
         {st.childTab==="premios"   && (
           <>
-            <ChildTienda kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} avail={avail}/>
+            <ChildTienda kidId={kidId} kid={kid} tasks={st.tasks} th={th} dispatch={dispatch} avail={avail} allPrivileges={st.privileges}/>
             <MoneyPanel
               kidId={kidId}
               kid={kid}
@@ -759,13 +772,20 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
             />
           </>
         )}
-        {st.childTab==="logros"    && <ChildLogros kid={kid} kidId={kidId} as={as} th={th}/>}
-        {st.childTab==="mensajes"  && <ChildMensajes kidId={kidId} kid={kid} th={th} dispatch={dispatch}/>}
+        {st.childTab==="logros"    && <ChildLogros kid={kid} kidId={kidId} as={as} th={th} achievOverrides={st.achievOverrides}/>}
+        {st.childTab==="mas"       && <ChildMas kidId={kidId} kid={kid} st={st} th={th} dispatch={dispatch} challenges={st.challenges||[]}/>}
       </div>
 
       <div className="tab-bar">
         {tabs.map(t=>(
-          <div key={t.id} className="tab-item" onClick={()=>{ dispatch({type:"SET_CHILD_TAB",tab:t.id}); if(t.id==="mensajes"&&unreadMsgs>0) dispatch({type:"READ_MESSAGES",kidId}); }}>
+          <div
+            key={t.id}
+            className="tab-item"
+            onClick={()=>{
+              dispatch({type:"SET_CHILD_TAB",tab:t.id});
+              if(t.id==="mas"&&unreadMsgs>0) dispatch({type:"READ_MESSAGES",kidId});
+            }}
+          >
             <span className="ti">{t.icon}</span>
             <span className="tl" style={{color:st.childTab===t.id?th.p:"#bbb"}}>{t.label}</span>
             {t.badge>0&&<span className="badge">{t.badge}</span>}
@@ -816,7 +836,36 @@ const ChildMensajes = memo(function ChildMensajes({ kidId, kid, th, dispatch }) 
 });
 
 // ─── CHILD TODAY ────────────────────────────────────────────────
-const ChildToday = memo(function ChildToday({ kidId, kid, tasks, th, dispatch, mult }) {
+const DEFAULT_FLASH_CHALLENGES = [
+  { id: "jump10", text: "Haz 10 saltos en el sitio", stars: 1 },
+  { id: "draw3", text: "Dibuja cualquier cosa en 3 minutos", stars: 1 },
+  { id: "hug", text: "Da un abrazo fuerte a alguien de tu familia", stars: 1 },
+  { id: "water", text: "Ve a beber un vaso de agua", stars: 1 },
+  { id: "pushups", text: "Haz 5 flexiones o 10 sentadillas", stars: 2 },
+  { id: "kind", text: "Escribe o di en voz alta algo amable de otra persona", stars: 2 },
+];
+
+function getFlashChallengesFromState(st) {
+  const custom = st.flashChallenges;
+  if (Array.isArray(custom) && custom.length) return custom;
+  return DEFAULT_FLASH_CHALLENGES;
+}
+
+function pickFlashChallenge(kidId, st) {
+  const list = getFlashChallengesFromState(st);
+  if (!list.length) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  const base = `${kidId || ""}-${today}`;
+  let hash = 0;
+  for (let i = 0; i < base.length; i++) {
+    hash = (hash * 31 + base.charCodeAt(i)) >>> 0;
+  }
+  const idx = hash % list.length;
+  const c = list[idx];
+  return { ...c };
+}
+
+const ChildToday = memo(function ChildToday({ kidId, kid, tasks, th, dispatch, mult, st }) {
   const todayIdx = getTodayIdx();
   const todayT = useMemo(
     () => tasks.filter(t => taskActiveToday(t.days)),
@@ -834,9 +883,36 @@ const ChildToday = memo(function ChildToday({ kidId, kid, tasks, th, dispatch, m
     [todayT, kid.completions]
   );
   const msgs = kid.messages.filter(m => !m.read);
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const flash = useMemo(() => pickFlashChallenge(kidId, st), [kidId, todayKey, st.flashChallenges]);
+  const flashDone = kid.stats?.lastFlashDate === todayKey;
+  const hasGratitudeToday = (kid.gratitude || []).some(g => g.date === todayKey);
+  const checkIn = {
+    tasks: doneCount > 0,
+    flash: !!flash && flashDone,
+    gratitude: hasGratitudeToday,
+  };
+  const miniGoalTarget = Math.min(3, todayT.length || 3);
 
   return (
     <>
+      {/* Check‑in diario rápido */}
+      <div className="card" style={{marginBottom:10,border:`2px solid ${th.p}33`,background:`${th.p}0A`}}>
+        <div style={{fontWeight:900,fontSize:13,marginBottom:4,color:"#222"}}>🔁 Rutina rápida de hoy</div>
+        <div style={{fontSize:11,color:"#777",marginBottom:6}}>Completa estas 3 cosas para aprovechar el día:</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",fontSize:11,fontWeight:700}}>
+          {[
+            { key:"tasks", label:"Revisar y hacer alguna tarea", done:checkIn.tasks },
+            { key:"flash", label:"Hacer el reto flash", done:checkIn.flash },
+            { key:"gratitude", label:"Escribir una gratitud", done:checkIn.gratitude },
+          ].map(s=>(
+            <div key={s.key} style={{flex:"1 1 30%",minWidth:0,display:"flex",alignItems:"center",gap:4}}>
+              <span style={{fontSize:14}}>{s.done?"✅":"⬜"}</span>
+              <span style={{color:s.done?th.a:"#666"}}>{s.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
       {msgs.length>0&&(
         <div style={{background:`linear-gradient(135deg,${th.p}22,${th.a}11)`,border:`2px solid ${th.p}55`,borderRadius:18,padding:14,marginBottom:12}}>
           <div style={{fontWeight:900,fontSize:13,marginBottom:6}}>💬 Mensaje de papá/mamá</div>
@@ -845,6 +921,61 @@ const ChildToday = memo(function ChildToday({ kidId, kid, tasks, th, dispatch, m
           ))}
         </div>
       )}
+
+      {flash && (
+        <div
+          className="card"
+          style={{
+            marginBottom: 12,
+            border: `2px dashed ${flashDone ? "#ccc" : th.p}`,
+            background: flashDone ? "#f5f5f5" : `${th.p}0f`,
+          }}
+        >
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <h3 style={{fontWeight:900,fontSize:14,color:"#222"}}>🎲 Reto sorpresa de hoy</h3>
+            <span style={{fontSize:11,fontWeight:800,color:flashDone?"#aaa":th.a}}>
+              +{flash.stars}⭐
+            </span>
+          </div>
+          <p style={{fontSize:13,color:"#444",marginBottom:10,lineHeight:1.4}}>
+            {flash.text}
+          </p>
+          <button
+            type="button"
+            disabled={flashDone}
+            onClick={() => dispatch({ type: "COMPLETE_DAILY_FLASH", kidId, stars: flash.stars, text: flash.text })}
+            style={{
+              width:"100%",
+              borderRadius:50,
+              border:"none",
+              padding:"8px 14px",
+              fontFamily:"'Nunito',sans-serif",
+              fontWeight:900,
+              fontSize:13,
+              cursor:flashDone?"default":"pointer",
+              background:flashDone?"#e5e5e5":"linear-gradient(135deg,#8DC63F,#5A9A20)",
+              color:flashDone?"#999":"#fff",
+              boxShadow:flashDone?"none":`0 4px 10px ${th.p}44`,
+            }}
+          >
+            {flashDone ? "Ya has hecho el reto de hoy" : "Hecho (ya lo hice)"}
+          </button>
+        </div>
+      )}
+
+      {/* Mini‑meta del día */}
+      <div className="card" style={{marginBottom:10,border:`2px solid ${th.p}33`,background:"#fff"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+          <div style={{fontWeight:900,fontSize:13,color:"#222"}}>🎯 Mini‑meta de hoy</div>
+          <div style={{fontSize:11,fontWeight:800,color:th.a}}>
+            {Math.min(doneCount, miniGoalTarget)}/{miniGoalTarget} tareas
+          </div>
+        </div>
+        <p style={{fontSize:11,color:"#777",marginBottom:6}}>
+          Intenta completar al menos <strong>{miniGoalTarget}</strong> de tus tareas de hoy. Si haces más, aún mejor.
+        </p>
+        <ProgressBar value={Math.min(doneCount, miniGoalTarget)} max={miniGoalTarget} color={th.p} height={6}/>
+      </div>
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"0 0 10px"}}>
         <h2 style={{fontWeight:900,fontSize:15,color:"#222"}}>📋 {DAY_FULL[todayIdx]}</h2>
@@ -944,7 +1075,7 @@ function TaskCard({ task, comp, kidId, th, dispatch, idx, mult }) {
 }
 
 // ─── CHILD LOGROS ───────────────────────────────────────────────
-function ChildLogros({ kid, kidId, as, th }) {
+function ChildLogros({ kid, kidId, as, th, achievOverrides }) {
   const lv=getLevel(as);
   const nextLv=getNextLevel(as);
   const euros=Math.floor(as/STARS_PER_EURO);
@@ -1002,14 +1133,16 @@ function ChildLogros({ kid, kidId, as, th }) {
       </p>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         {ACHIEV.map(a=>{
+          const over = (achievOverrides || []).find(o=>o.id===a.id) || null;
+          const view = over ? { ...a, ...over } : a;
           const unlocked=kid.achievements.includes(a.id);
           return (
             <div key={a.id} className="card" style={{textAlign:"center",border:unlocked?`2.5px solid ${th.p}99`:"2px solid #f0f0f0",background:unlocked?`${th.p}12`:"#fafafa",opacity:unlocked?1:.4,padding:12,animation:unlocked?"levelUp .5s both":"none"}}>
-              <div style={{fontSize:32,filter:unlocked?"none":"grayscale(1)",marginBottom:4}}>{a.emoji}</div>
-              <div style={{fontWeight:900,fontSize:12,color:"#222"}}>{a.label}</div>
-              <div style={{fontSize:10,color:"#888",marginTop:2,lineHeight:1.3}}>{a.desc}</div>
-              {unlocked?<div style={{marginTop:6,background:th.p,borderRadius:8,padding:"2px 8px",fontSize:10,fontWeight:900,color:"#fff",display:"inline-block"}}>+{a.bonus}⭐ bonus</div>
-               :<div style={{marginTop:4,fontSize:10,color:"#ccc",fontWeight:700}}>{"⭐".repeat(a.diff)} dificultad</div>}
+              <div style={{fontSize:32,filter:unlocked?"none":"grayscale(1)",marginBottom:4}}>{view.emoji}</div>
+              <div style={{fontWeight:900,fontSize:12,color:"#222"}}>{view.label}</div>
+              <div style={{fontSize:10,color:"#888",marginTop:2,lineHeight:1.3}}>{view.desc}</div>
+              {unlocked?<div style={{marginTop:6,background:th.p,borderRadius:8,padding:"2px 8px",fontSize:10,fontWeight:900,color:"#fff",display:"inline-block"}}>+{view.bonus}⭐ bonus</div>
+               :<div style={{marginTop:4,fontSize:10,color:"#ccc",fontWeight:700}}>Nivel de reto: {view.diff}/5</div>}
             </div>
           );
         })}
@@ -1018,16 +1151,19 @@ function ChildLogros({ kid, kidId, as, th }) {
   );
 }
 
+// (Sección Aventuras eliminada por no encajar con la edad actual)
+
 // ─── CHILD TIENDA ───────────────────────────────────────────────
-const ChildTienda = memo(function ChildTienda({ kidId, kid, tasks, th, dispatch, avail }) {
+const ChildTienda = memo(function ChildTienda({ kidId, kid, tasks, th, dispatch, avail, allPrivileges }) {
   const [activeTab,setActiveTab]=useState("privilegios");
   const privileges = kid.privileges || [];
   const wishlist = kid.wishlist || [];
+  const avatar = kid.avatar || { items: [], equipped: null };
 
   return (
     <>
       <div style={{display:"flex",gap:8,marginBottom:12}}>
-        {[{id:"privilegios",label:"🛍️ Privilegios"},{id:"deseos",label:"🌠 Deseos"}].map(t=>(
+        {[{id:"privilegios",label:"🛍️ Privilegios"},{id:"deseos",label:"🌠 Deseos"},{id:"avatar",label:"👕 Avatar"}].map(t=>(
           <button key={t.id} onClick={()=>setActiveTab(t.id)}
             style={{flex:1,borderRadius:50,padding:"8px",border:"none",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:13,background:activeTab===t.id?th.p:"#f0f0f0",color:activeTab===t.id?"#fff":"#888",transition:"all .2s"}}>
             {t.label}
@@ -1043,12 +1179,13 @@ const ChildTienda = memo(function ChildTienda({ kidId, kid, tasks, th, dispatch,
         <div style={{fontSize:11,color:"#555",fontWeight:600}}>
           En <strong>Privilegios</strong> las estrellas se <strong>gastan</strong> para cosas como pantalla extra o elegir la cena.
           En <strong>Deseos</strong> escribes metas grandes (por ejemplo un libro, una excursión o un curso); papá/mamá las aprueban, pero no gastan estrellas.
+          En <strong>Avatar</strong> puedes cambiar tu aspecto desbloqueando accesorios divertidos con estrellas.
         </div>
       </div>
 
       {activeTab==="privilegios"&&(
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          {PRIVILEGES.map(p=>{
+          {(allPrivileges || PRIVILEGES).map(p=>{
             const canAfford=avail>=p.cost;
             const owned=privileges.filter(pr=>pr.item.id===p.id).length;
             return (
@@ -1074,6 +1211,12 @@ const ChildTienda = memo(function ChildTienda({ kidId, kid, tasks, th, dispatch,
             style={{width:"100%",background:`linear-gradient(135deg,${th.p},${th.a})`,color:"#fff",border:"none",borderRadius:20,padding:"14px",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:15,cursor:"pointer",marginBottom:12}}>
             🌠 Añadir nuevo deseo
           </button>
+          <div className="card" style={{marginBottom:10,border:`2px solid ${th.p}22`,background:`${th.p}06`}}>
+            <div style={{fontWeight:900,fontSize:13,marginBottom:4,color:"#222"}}>💡 Usa los deseos para proponer cosas</div>
+            <p style={{fontSize:11,color:"#666",lineHeight:1.4,margin:0}}>
+              Aquí puedes apuntar cosas que te gustaría conseguir o hacer: un libro, una salida, un curso, un “día especial con papá/mamá”, etc.
+            </p>
+          </div>
           {wishlist.length===0
             ?<div style={{textAlign:"center",padding:"40px 0",color:"#ccc"}}><div style={{fontSize:48}}>🌠</div><div style={{fontWeight:700,marginTop:8}}>Aún no tienes deseos</div><div style={{fontSize:13,marginTop:4}}>Añade lo que quieres conseguir</div></div>
             :wishlist.map(w=>(
@@ -1090,19 +1233,73 @@ const ChildTienda = memo(function ChildTienda({ kidId, kid, tasks, th, dispatch,
             ))}
         </>
       )}
+
+      {activeTab==="avatar"&&(
+        <>
+          <div className="card" style={{marginBottom:12,border:`2px solid ${th.p}44`,background:`${th.p}10`}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <Avatar photo={kid.photo} emoji="👦" size={52} color={th.p}/>
+              <div>
+                <div style={{fontWeight:900,fontSize:14,color:"#222"}}>Tu estilo</div>
+                <div style={{fontSize:11,color:"#555",marginTop:2}}>
+                  Desbloquea gorros, fondos y más con tus ⭐.
+                </div>
+                {avatar.equipped && (
+                  <div style={{marginTop:4,fontSize:11,fontWeight:800,color:th.a}}>
+                    Accesorio activo: {AVATAR_ITEMS.find(i=>i.id===avatar.equipped)?.name || "Ninguno"}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {AVATAR_ITEMS.map(item=>{
+              const owned = avatar.items.includes(item.id);
+              const canAfford = avail >= item.cost;
+              const equipped = avatar.equipped === item.id;
+              return (
+                <div key={item.id} className="card" style={{textAlign:"center",padding:12,border:equipped?`2.5px solid ${th.p}99`:owned?`2px solid ${th.p}55`:"2px solid #f0f0f0",background:equipped?`${th.p}18`:owned?`${th.p}08`:"#fff",opacity:!owned && !canAfford ? 0.6 : 1}}>
+                  <div style={{fontSize:32,marginBottom:4}}>{item.emoji}</div>
+                  <div style={{fontWeight:900,fontSize:12,color:"#222"}}>{item.name}</div>
+                  <div style={{fontSize:10,color:"#888",margin:"3px 0 6px"}}>Ranura: {item.slot}</div>
+                  <div style={{fontWeight:900,color:"#CC8800",fontSize:13,marginBottom:6}}>{item.cost} ⭐</div>
+                  {owned ? (
+                    <button
+                      onClick={()=>!equipped && dispatch({type:"EQUIP_AVATAR_ITEM",kidId,itemId:item.id})}
+                      disabled={equipped}
+                      style={{width:"100%",background:equipped?"#e0e0e0":`linear-gradient(135deg,${th.p},${th.a})`,color:equipped?"#999":"#fff",border:"none",borderRadius:12,padding:"8px",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:13,cursor:equipped?"default":"pointer"}}
+                    >
+                      {equipped ? "Equipado" : "Usar"}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={()=>dispatch({type:"REDEEM_AVATAR_ITEM",kidId,itemId:item.id})}
+                      disabled={!canAfford}
+                      style={{width:"100%",background:canAfford?`linear-gradient(135deg,${th.p},${th.a})`:"#f0f0f0",color:canAfford?"#fff":"#aaa",border:"none",borderRadius:12,padding:"8px",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:13,cursor:canAfford?"pointer":"not-allowed"}}
+                    >
+                      {canAfford ? "Desbloquear" : `Faltan ${item.cost-avail}⭐`}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
     </>
   );
 });
 
 // ─── CHILD MÁS ──────────────────────────────────────────────────
 const ChildMas = memo(function ChildMas({ kidId, kid, st, th, dispatch, challenges }) {
-  const [subTab,setSubTab]=useState("gratitud");
+  const [subTab,setSubTab]=useState("mensajes");
   const myChallenges=challenges.filter(c=>c.kid1===kidId||c.kid2===kidId);
 
   return (
     <>
       <div style={{display:"flex",gap:8,marginBottom:12,overflowX:"auto"}}>
-        {[{id:"gratitud",label:"📝 Gratitud"},{id:"retos",label:"⚔️ Retos"},{id:"historial",label:"📆 Historial"}].map(t=>(
+        {[{id:"mensajes",label:"💬 Mensajes"},{id:"gratitud",label:"📝 Gratitud"},{id:"retos",label:"⚔️ Retos"},{id:"historial",label:"📆 Historial"}].map(t=>(
           <button key={t.id} onClick={()=>setSubTab(t.id)}
             style={{whiteSpace:"nowrap",borderRadius:50,padding:"8px 14px",border:"none",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:12,background:subTab===t.id?th.p:"#f0f0f0",color:subTab===t.id?"#fff":"#888",transition:"all .2s"}}>
             {t.label}
@@ -1110,12 +1307,24 @@ const ChildMas = memo(function ChildMas({ kidId, kid, st, th, dispatch, challeng
         ))}
       </div>
 
+      {subTab==="mensajes"&&(
+        <ChildMensajes kidId={kidId} kid={kid} th={th} dispatch={dispatch}/>
+      )}
+
       {subTab==="gratitud"&&(
         <>
           <button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"gratitude",kidId}})}
             style={{width:"100%",background:`linear-gradient(135deg,${th.p},${th.a})`,color:"#fff",border:"none",borderRadius:20,padding:14,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:15,cursor:"pointer",marginBottom:12}}>
             📝 Escribir gratitud de hoy
           </button>
+          <div className="card" style={{marginBottom:10,border:`2px solid ${th.p}22`,background:`${th.p}06`}}>
+            <div style={{fontWeight:900,fontSize:13,marginBottom:4,color:"#222"}}>🎯 En qué quiero mejorar</div>
+            <p style={{fontSize:11,color:"#666",lineHeight:1.5,margin:0}}>
+              {kid.profile?.focusAreas
+                ? kid.profile.focusAreas
+                : "Pide a papá o mamá que escriban aquí tus áreas a mejorar (por ejemplo: música, deporte, lectura)."}
+            </p>
+          </div>
           {kid.gratitude.length===0
             ?<div style={{textAlign:"center",padding:"40px 0",color:"#ccc"}}><div style={{fontSize:48}}>🙏</div><div style={{fontWeight:700,marginTop:8}}>Tu diario de gratitud</div><div style={{fontSize:13,marginTop:4}}>Escribe algo por lo que estás agradecido</div></div>
             :kid.gratitude.map(g=>(
@@ -1157,10 +1366,6 @@ const ChildMas = memo(function ChildMas({ kidId, kid, st, th, dispatch, challeng
 
       {subTab==="historial"&&<KidHistory kid={kid} th={th}/>}
 
-      <div className="card" style={{marginTop:16,border:`2px solid ${th.p}33`,background:`${th.p}08`}}>
-        <div style={{fontWeight:900,fontSize:13,marginBottom:6}}>🔗 Vincular cuenta de Google</div>
-        <p style={{fontSize:12,color:"#666",lineHeight:1.5}}>Para poder iniciar sesión con tu cuenta en otro dispositivo, pide a papá o mamá que añada tu email en <strong>Configuración → perfil de niño</strong>.</p>
-      </div>
     </>
   );
 });
@@ -1326,8 +1531,8 @@ const MoneyPanel = memo(function MoneyPanel({ kidId, kid, tasks, th, isParent, d
 
       <div className="card" style={{background:"#FFF3CC",border:"2px solid #FFD966"}}>
         <div style={{fontSize:12,fontWeight:700,color:"#CC8800",lineHeight:1.6}}>
-          💡 Cada <strong>30⭐</strong> = <strong>1€</strong> de recompensa.<br/>
-          Las estrellas bonus de logros y privilegios también cuentan.
+          💡 Cada <strong>{STARS_PER_EURO}⭐</strong> aprobadas se convierten en <strong>1€</strong> de recompensa cuando tú lo entregas.<br/>
+          Las estrellas bonus de logros y retos flash también cuentan en el total.
         </div>
       </div>
     </>
@@ -1344,10 +1549,10 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
   const th = parentRole === "mother" ? { ...TH.parent, p: "#E91E8C", a: "#C2185B", l: "#FCE4EC", d: "#880E4F" } : TH.parent;
   const pendingN=st.notifications.filter(n=>!n.read);
   const tabs=[
-    {id:"inicio", icon:"🏠", label:"Inicio"},
-    {id:"aprobar", icon:"✅", label:"Aprobar", badge:pendingN.length},
-    {id:"tareas", icon:"📋", label:"Tareas"},
-    {id:"familia", icon:"👨‍👩‍👧", label:"Familia"},
+    {id:"inicio",      icon:"🏠",       label:"Inicio"},
+    {id:"aprobar",     icon:"✅",       label:"Aprobar",    badge:pendingN.length},
+    {id:"recompensas", icon:"🎁",       label:"Recompensas"},
+    {id:"cuentas",     icon:"⚙️",       label:"Cuentas"},
   ];
   const kidIds = (st.kidsOrder && st.kidsOrder.length
     ? st.kidsOrder.filter(id=>st.kids[id])
@@ -1364,6 +1569,11 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
           <div style={{flex:1,minWidth:0}}>
             <p style={{color:"rgba(255,255,255,.75)",fontSize:11,fontWeight:700}}>Panel de {parentRole==="father"?"padre":"madre"}</p>
             <h1 style={{color:"#fff",fontSize:22,fontWeight:900,lineHeight:1}}>{currentParent.name||PARENT_ROLE_LABEL[parentRole]} {parentRole==="father"?"👨":"👩"}</h1>
+            {(currentParent.email || roleData?.email) && (
+              <div style={{marginTop:4,fontSize:11,color:"rgba(255,255,255,.9)",fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                {(currentParent.email || roleData?.email || "").toLowerCase()}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1404,8 +1614,14 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
           </>
         )}
         {st.parentTab==="aprobar" && <ParentNotifs st={st} dispatch={dispatch} parentRole={parentRole}/>}
-        {st.parentTab==="tareas"  && <ParentTareas st={st} dispatch={dispatch}/>}
-        {st.parentTab==="familia" && (
+        {st.parentTab==="recompensas" && (
+          <>
+            <ParentFlashConfig st={st} dispatch={dispatch} />
+            <ParentPrivilegesConfig st={st} dispatch={dispatch} />
+            <ParentAchievementsConfig st={st} dispatch={dispatch} />
+          </>
+        )}
+        {st.parentTab==="cuentas" && (
           <>
             <ParentConfig
               st={st}
@@ -1413,7 +1629,10 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
               parentRole={parentRole}
               currentParent={currentParent}
               familyId={roleData?.familyId}
+              onlyKids={false}
             />
+            {/* Gestión global de tareas para los niños */}
+            <ParentTareas st={st} dispatch={dispatch}/>
             <ParentMensajesYGratitud st={st} dispatch={dispatch}/>
             <ParentHistory st={st}/>
           </>
@@ -1428,6 +1647,297 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
             {t.badge>0&&<span className="badge">{t.badge}</span>}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// Configuración de retos flash (editable por padres)
+function ParentFlashConfig({ st, dispatch }) {
+  const list = st.flashChallenges && Array.isArray(st.flashChallenges) && st.flashChallenges.length
+    ? st.flashChallenges
+    : DEFAULT_FLASH_CHALLENGES;
+  const [local, setLocal] = useState(list);
+
+  const updateItem = (idx, patch) => {
+    setLocal(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
+  };
+
+  const addItem = () => {
+    setLocal(prev => [...prev, { id: `custom_${Date.now()}`, text: "", stars: 1 }]);
+  };
+
+  const removeItem = (idx) => {
+    setLocal(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const save = () => {
+    const cleaned = local
+      .map(it => ({ ...it, text: (it.text || "").trim() }))
+      .filter(it => it.text && it.stars > 0);
+    dispatch({ type: "SET_FLASH_CHALLENGES", list: cleaned });
+  };
+
+  return (
+    <div className="card" style={{marginTop:12}}>
+      <h3 style={{fontWeight:900,marginBottom:8}}>🎲 Retos flash diarios</h3>
+      <p style={{fontSize:11,color:"#777",marginBottom:8}}>
+        Aquí puedes personalizar los mini‑retos sorpresa que verán los niños en la pestaña de Hoy.
+      </p>
+      <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:220,overflowY:"auto",marginBottom:8}}>
+        {local.map((it,idx)=>(
+          <div key={it.id} style={{display:"flex",gap:6,alignItems:"center"}}>
+            <textarea
+              value={it.text}
+              onChange={e=>updateItem(idx,{text:e.target.value})}
+              placeholder="Texto del reto (ej: Haz 10 flexiones)"
+              style={{flex:1,minHeight:40,fontSize:12,padding:"6px 8px",borderRadius:10,border:"1px solid #ddd",fontFamily:"'Nunito',sans-serif"}}
+            />
+            <input
+              type="number"
+              min={1}
+              max={5}
+              value={it.stars}
+              onChange={e=>updateItem(idx,{stars:Math.max(1,Math.min(5,parseInt(e.target.value)||1))})}
+              style={{width:52,padding:"6px 6px",borderRadius:10,border:"1px solid #ddd",fontSize:12,textAlign:"center"}}
+            />
+            <span style={{fontSize:11,fontWeight:800,color:"#CC8800"}}>⭐</span>
+            <button
+              type="button"
+              onClick={()=>removeItem(idx)}
+              style={{fontSize:11,borderRadius:8,border:"1px solid #f0c0c0",padding:"4px 8px",background:"#FFF0F0",color:PALETTE.error,cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800}}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <button
+          type="button"
+          onClick={addItem}
+          style={{flex:1,borderRadius:10,border:"1px dashed #ccc",padding:"8px 10px",background:"#f8f8f8",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Nunito',sans-serif",color:"#555"}}
+        >
+          + Añadir reto
+        </button>
+        <button
+          type="button"
+          onClick={save}
+          style={{flex:1,borderRadius:10,border:"none",padding:"8px 10px",background:"linear-gradient(135deg,#8DC63F,#5A9A20)",fontSize:12,fontWeight:900,cursor:"pointer",fontFamily:"'Nunito',sans-serif",color:"#fff"}}
+        >
+          Guardar cambios
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Configuración de privilegios (editable por padres)
+function ParentPrivilegesConfig({ st, dispatch }) {
+  const list = (st.privileges && Array.isArray(st.privileges) && st.privileges.length) ? st.privileges : PRIVILEGES;
+  const [local, setLocal] = useState(list);
+
+  const updateItem = (idx, patch) => {
+    setLocal(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
+  };
+
+  const addItem = () => {
+    setLocal(prev => [
+      ...prev,
+      {
+        id: `priv_custom_${Date.now()}_${prev.length}`,
+        name: "",
+        cost: 10,
+        emoji: "⭐",
+        desc: "",
+      },
+    ]);
+  };
+
+  const removeItem = (idx) => {
+    setLocal(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const save = () => {
+    const cleaned = local
+      .map(it => ({
+        ...it,
+        name: (it.name || "").trim(),
+        desc: (it.desc || "").trim(),
+        emoji: (it.emoji || "⭐").trim() || "⭐",
+        cost: Math.max(1, Number.isFinite(it.cost) ? it.cost : 1),
+      }))
+      .filter(it => it.name && it.cost > 0);
+    if (!cleaned.length) return;
+    dispatch({ type: "SET_PRIVILEGES", list: cleaned });
+  };
+
+  return (
+    <div className="card" style={{marginTop:12}}>
+      <h3 style={{fontWeight:900,marginBottom:8}}>🛍️ Privilegios</h3>
+      <p style={{fontSize:11,color:"#777",marginBottom:8}}>
+        Ajusta el nombre, coste y descripción de los privilegios que los niños pueden canjear con estrellas.
+      </p>
+      <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:220,overflowY:"auto",marginBottom:8}}>
+        {local.map((it,idx)=>(
+          <div key={it.id} style={{borderBottom:"1px solid #f0f0f0",paddingBottom:6,marginBottom:4}}>
+            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4}}>
+              <input
+                value={it.emoji || ""}
+                onChange={e=>updateItem(idx,{emoji:e.target.value})}
+                style={{width:34,textAlign:"center",padding:"4px 4px",borderRadius:8,border:"1px solid #ddd",fontSize:16}}
+              />
+              <input
+                value={it.name || ""}
+                onChange={e=>updateItem(idx,{name:e.target.value})}
+                placeholder="Nombre (ej: Elegir la cena)"
+                style={{flex:1,padding:"4px 8px",borderRadius:8,border:"1px solid #ddd",fontSize:12}}
+              />
+              <input
+                type="number"
+                min={1}
+                value={it.cost}
+                onChange={e=>updateItem(idx,{cost:parseInt(e.target.value)||1})}
+                style={{width:60,padding:"4px 4px",borderRadius:8,border:"1px solid #ddd",fontSize:12,textAlign:"center"}}
+              />
+              <span style={{fontSize:11,fontWeight:800,color:"#CC8800"}}>⭐</span>
+            </div>
+            <textarea
+              value={it.desc || ""}
+              onChange={e=>updateItem(idx,{desc:e.target.value})}
+              placeholder="Descripción corta del privilegio"
+              style={{width:"100%",minHeight:32,fontSize:11,padding:"4px 6px",borderRadius:8,border:"1px solid #eee",fontFamily:"'Nunito',sans-serif"}}
+            />
+            <div style={{marginTop:4,textAlign:"right"}}>
+              <button
+                type="button"
+                onClick={()=>removeItem(idx)}
+                style={{fontSize:11,borderRadius:8,border:"1px solid #f0c0c0",padding:"3px 8px",background:"#FFF0F0",color:PALETTE.error,cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800}}
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <button
+          type="button"
+          onClick={addItem}
+          style={{flex:1,borderRadius:10,border:"1px dashed #ccc",padding:"8px 10px",background:"#f8f8f8",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Nunito',sans-serif",color:"#555"}}
+        >
+          + Añadir privilegio
+        </button>
+        <button
+          type="button"
+          onClick={save}
+          style={{flex:1,borderRadius:10,border:"none",padding:"8px 10px",background:"linear-gradient(135deg,#FFB800,#CC8800)",fontSize:12,fontWeight:900,cursor:"pointer",fontFamily:"'Nunito',sans-serif",color:"#fff"}}
+        >
+          Guardar privilegios
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Configuración de logros / medallas (editable por padres)
+function ParentAchievementsConfig({ st, dispatch }) {
+  const overrides = Array.isArray(st.achievOverrides) ? st.achievOverrides : [];
+  const base = ACHIEV.map(a => {
+    const over = overrides.find(o => o.id === a.id) || null;
+    return over ? { ...a, ...over } : a;
+  });
+  const [local, setLocal] = useState(base);
+
+  const updateItem = (idx, patch) => {
+    setLocal(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
+  };
+
+  const save = () => {
+    const changed = local
+      .map((it, idx) => {
+        const orig = ACHIEV[idx];
+        if (!orig || orig.id !== it.id) return null;
+        const diff =
+          it.label !== orig.label ||
+          it.desc !== orig.desc ||
+          it.emoji !== orig.emoji ||
+          it.bonus !== orig.bonus ||
+          it.diff !== orig.diff;
+        if (!diff) return null;
+        return {
+          id: it.id,
+          label: it.label,
+          desc: it.desc,
+          emoji: it.emoji,
+          bonus: it.bonus,
+          diff: it.diff,
+        };
+      })
+      .filter(Boolean);
+    dispatch({ type: "SET_ACHIEV_OVERRIDES", list: changed });
+  };
+
+  const reset = () => {
+    setLocal(ACHIEV);
+    dispatch({ type: "SET_ACHIEV_OVERRIDES", list: [] });
+  };
+
+  return (
+    <div className="card" style={{marginTop:12}}>
+      <h3 style={{fontWeight:900,marginBottom:8}}>🏅 Medallas y logros</h3>
+      <p style={{fontSize:11,color:"#777",marginBottom:8}}>
+        Cambia el nombre, emoji y texto de cada logro para adaptarlo a tu familia (p.ej. “Explorador”, “Héroe de la casa”).
+      </p>
+      <div style={{maxHeight:220,overflowY:"auto",marginBottom:8}}>
+        {local.map((it,idx)=>(
+          <div key={it.id} style={{borderBottom:"1px solid #f0f0f0",paddingBottom:6,marginBottom:6}}>
+            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4}}>
+              <input
+                value={it.emoji || ""}
+                onChange={e=>updateItem(idx,{emoji:e.target.value})}
+                style={{width:34,textAlign:"center",padding:"4px 4px",borderRadius:8,border:"1px solid #ddd",fontSize:18}}
+              />
+              <input
+                value={it.label || ""}
+                onChange={e=>updateItem(idx,{label:e.target.value})}
+                placeholder="Nombre del logro"
+                style={{flex:1,padding:"4px 8px",borderRadius:8,border:"1px solid #ddd",fontSize:12}}
+              />
+              <input
+                type="number"
+                min={1}
+                max={5}
+                value={it.diff}
+                onChange={e=>updateItem(idx,{diff:Math.max(1,Math.min(5,parseInt(e.target.value)||1))})}
+                style={{width:52,padding:"4px 4px",borderRadius:8,border:"1px solid #ddd",fontSize:11,textAlign:"center"}}
+              />
+              <span style={{fontSize:11,color:"#888"}}>Nivel de reto (1–5)</span>
+            </div>
+            <textarea
+              value={it.desc || ""}
+              onChange={e=>updateItem(idx,{desc:e.target.value})}
+              placeholder="Descripción del logro"
+              style={{width:"100%",minHeight:32,fontSize:11,padding:"4px 6px",borderRadius:8,border:"1px solid #eee",fontFamily:"'Nunito',sans-serif"}}
+            />
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <button
+          type="button"
+          onClick={reset}
+          style={{flex:1,borderRadius:10,border:"1px solid #ddd",padding:"8px 10px",background:"#f8f8f8",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Nunito',sans-serif",color:"#555"}}
+        >
+          Volver a textos originales
+        </button>
+        <button
+          type="button"
+          onClick={save}
+          style={{flex:1,borderRadius:10,border:"none",padding:"8px 10px",background:"linear-gradient(135deg,#8DC63F,#5A9A20)",fontSize:12,fontWeight:900,cursor:"pointer",fontFamily:"'Nunito',sans-serif",color:"#fff"}}
+        >
+          Guardar cambios de medallas
+        </button>
       </div>
     </div>
   );
@@ -1719,6 +2229,11 @@ function ParentRanking({ st, dispatch }) {
     <>
       <div className="card" style={{background:"linear-gradient(135deg,#FFF9E6,#FFFBCC)",border:"2px solid #FFB800",margin:"12px 0 12px"}}>
         <h3 style={{fontWeight:900,color:"#CC8800",marginBottom:14}}>🏆 Clasificación</h3>
+        {st.notifications.filter(n=>!n.read).length>0 && (
+          <div style={{marginBottom:10,fontSize:11,color:"#555",fontWeight:700}}>
+            Tienes <strong>{st.notifications.filter(n=>!n.read).length}</strong> tareas pendientes de revisar en la pestaña <strong>Aprobar</strong>.
+          </div>
+        )}
         {kids.map((k,i)=>{
           const kth=getKidColor(k.id,i); const maxAs=Math.max(...kids.map(x=>x.as),1);
           return (
@@ -1926,13 +2441,22 @@ function KidEditor({ id, kid, dispatch, familyId, index=0, total=1 }) {
           :<button onClick={save} style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:10,padding:"7px 12px",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:12,color:"#fff"}}>✅</button>}
       </div>
       <div style={{marginTop:10,marginLeft:0}}>
-        <div style={{fontWeight:800,fontSize:11,color:"#666",marginBottom:4}}>🔗 Vincular cuenta de Google</div>
-        <p style={{fontSize:10,color:"#888",marginBottom:6}}>Si el niño inicia sesión con ese email, verá su perfil.</p>
-        <div style={{display:"flex",gap:6}}>
+        <div style={{fontWeight:800,fontSize:11,color:"#666",marginBottom:4}}>🔗 Email vinculado</div>
+        <p style={{fontSize:10,color:"#888",marginBottom:4}}>
+          Este email permite que el niño vea su perfil si inicia sesión con él.
+        </p>
+        {kid.email && (
+          <div style={{fontSize:11,color:"#4A7A1E",fontWeight:800,marginBottom:4}}>
+            ✅ {kid.email}
+          </div>
+        )}
+        <div style={{display:"flex",gap:6,marginBottom: total>1 ? 6 : 0}}>
           <input type="email" value={kidEmail} onChange={e=>setKidEmail(e.target.value)} placeholder="email@gmail.com"
             style={{flex:1,padding:"6px 10px",borderRadius:8,border:"2px solid #eee",fontFamily:"'Nunito',sans-serif",fontSize:12}}/>
           <button onClick={saveKidLink} disabled={savingLink||!kidEmail.trim()}
-            style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:8,padding:"6px 12px",cursor:savingLink?"wait":"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:11,color:"#fff"}}>{savingLink?"…":"Vincular"}</button>
+            style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:8,padding:"6px 12px",cursor:savingLink?"wait":"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:11,color:"#fff"}}>
+            {savingLink ? "…" : (kid.email ? "Actualizar" : "Vincular")}
+          </button>
         </div>
         {total>1 && (
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -1959,7 +2483,7 @@ function KidEditor({ id, kid, dispatch, familyId, index=0, total=1 }) {
   );
 }
 
-function ParentConfig({ st, dispatch, parentRole, currentParent, familyId }) {
+function ParentConfig({ st, dispatch, parentRole, currentParent, familyId, onlyKids }) {
   const pr = parentRole || "father";
   const cp = currentParent || st.parents?.[pr] || { photo: null, name: PARENT_ROLE_LABEL[pr], email: null };
   const [pname,setPname]=useState(cp.name||PARENT_ROLE_LABEL[pr]);
@@ -1982,8 +2506,9 @@ function ParentConfig({ st, dispatch, parentRole, currentParent, familyId }) {
   }
   return (
     <>
+      {!onlyKids && (
       <div className="card" style={{margin:"12px 0"}}>
-        <h3 style={{fontWeight:900,marginBottom:14}}>⚙️ Configuración</h3>
+        <h3 style={{fontWeight:900,marginBottom:14}}>⚙️ Configuración de padres</h3>
         {/* Parent section */}
         <div style={{padding:"12px 0",borderBottom:"1px solid #f0f0f0"}}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -1996,16 +2521,44 @@ function ParentConfig({ st, dispatch, parentRole, currentParent, familyId }) {
               style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:10,padding:"7px 12px",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:12,color:"#fff"}}>✅</button>
           </div>
           <div style={{marginTop:12}}>
-            <div style={{fontWeight:800,fontSize:12,color:"#666",marginBottom:6}}>🔗 Vincular cuenta de Google</div>
-            <p style={{fontSize:11,color:"#888",marginBottom:8}}>Si esta persona inicia sesión con este email, verá esta familia.</p>
+            <div style={{fontWeight:800,fontSize:12,color:"#666",marginBottom:6}}>🔗 Cuenta de Google vinculada</div>
+            <p style={{fontSize:11,color:"#888",marginBottom:8}}>
+              Si esta persona inicia sesión con este email, verá esta familia.
+            </p>
+            {cp.email ? (
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <span style={{fontSize:12,color:"#4A7A1E",fontWeight:800}}>✅ {cp.email}</span>
+                <button
+                  type="button"
+                  onClick={()=>{ setPemail(cp.email || ""); }}
+                  style={{fontSize:11,borderRadius:8,border:"1px solid #ddd",padding:"4px 10px",background:"#fff",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800}}
+                >
+                  Editar
+                </button>
+              </div>
+            ) : (
+              <div style={{fontSize:11,color:"#aaa",marginBottom:6}}>Ningún email vinculado todavía.</div>
+            )}
             <div style={{display:"flex",gap:8}}>
-              <input type="email" value={pemail} onChange={e=>setPemail(e.target.value)} placeholder="email@gmail.com"
-                style={{flex:1,padding:"8px 12px",borderRadius:10,border:"2px solid #eee",fontFamily:"'Nunito',sans-serif",fontSize:13}}/>
-              <button onClick={saveParentLink} disabled={savingLink||!pemail.trim()}
-                style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:10,padding:"8px 14px",cursor:savingLink?"wait":"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:12,color:"#fff"}}>{savingLink?"…":"Vincular"}</button>
+              <input
+                type="email"
+                value={pemail}
+                onChange={e=>setPemail(e.target.value)}
+                placeholder="email@gmail.com"
+                style={{flex:1,padding:"8px 12px",borderRadius:10,border:"2px solid #eee",fontFamily:"'Nunito',sans-serif",fontSize:13}}
+              />
+              <button
+                onClick={saveParentLink}
+                disabled={savingLink||!pemail.trim()}
+                style={{background:`linear-gradient(135deg,${th.p},${th.a})`,border:"none",borderRadius:10,padding:"8px 14px",cursor:savingLink?"wait":"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:12,color:"#fff"}}
+              >
+                {savingLink?"…": cp.email ? "Actualizar" : "Vincular"}
+              </button>
             </div>
           </div>
         </div>
+      </div>
+      )}
       {/* Kids */}
       {(() => {
         const ids = (st.kidsOrder && st.kidsOrder.length
@@ -2047,7 +2600,6 @@ function ParentConfig({ st, dispatch, parentRole, currentParent, familyId }) {
             </p>
           </div>
         )}
-      </div>
 
       {!FCM_VAPID_KEY&&(
         <div className="card" style={{border:"2px solid #FFB800",background:"#FFFBEA"}}>
@@ -2055,19 +2607,6 @@ function ParentConfig({ st, dispatch, parentRole, currentParent, familyId }) {
           <div style={{fontSize:12,color:"#888",marginTop:4}}>Para recibir avisos en el móvil, añade la variable <code style={{background:"#f0f0f0",padding:"2px 6px",borderRadius:4}}>VITE_FCM_VAPID_KEY</code> en Netlify (Site settings → Environment variables). Obtén la clave en Firebase Console → Cloud Messaging → Web Push certificates.</div>
         </div>
       )}
-
-      {/* Send message to kids */}
-      <div className="card">
-        <h3 style={{fontWeight:900,marginBottom:12}}>💬 Enviar mensaje de ánimo</h3>
-        <div style={{display:"flex",gap:8,marginBottom:10}}>
-          {(Object.keys(st.kids||{})).map((id,i)=>(
-            <button key={id} onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"sendMsg",kidId:id}})}
-              style={{flex:1,background:`linear-gradient(135deg,${getKidColor(id,i).p},${getKidColor(id,i).a})`,color:"#fff",border:"none",borderRadius:14,padding:"10px",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:13,cursor:"pointer"}}>
-              👦 {st.kids[id]?.name||id}
-            </button>
-          ))}
-        </div>
-      </div>
 
       <div className="card" style={{background:"#FFF0F0",border:"2px solid #FFD0D0",textAlign:"center"}}>
         <button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"exitMenu"}})}
@@ -2796,17 +3335,135 @@ export default function App() {
   return (
     <>
       <div className="app">
-        {st.toast&&<div className="toast">{st.toast}</div>}
-        {st.confetti&&<Confetti/>}
+        {st.toast && <div className="toast">{st.toast}</div>}
+        {st.confetti && <Confetti />}
+        {st.confetti && (
+          <div
+            className="card"
+            style={{
+              position: "fixed",
+              top: "4.5rem",
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 40,
+              maxWidth: "min(90%, 28rem)",
+              background: "linear-gradient(135deg,#FFFBEA,#E0FFFA)",
+              border: "2px solid rgba(141,198,63,0.55)",
+              boxShadow: "0 10px 24px rgba(0,0,0,0.12)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ fontSize: 26 }}>🎉</div>
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 900,
+                    color: "#2D5010",
+                    marginBottom: 2,
+                  }}
+                >
+                  ¡Súper misión completada!
+                </div>
+                {(() => {
+                  const messages = [
+                    "Eres un campeón de la organización.",
+                    "Gran trabajo, tu esfuerzo se nota.",
+                    "¡Sigue así, estás construyendo un gran hábito!",
+                    "Tus papás están muy orgullosos de ti.",
+                    "Cada día mejoras un poco más.",
+                    "Tu disciplina te está llevando muy lejos.",
+                    "Lo que haces hoy construye tu futuro.",
+                    "Tu esfuerzo habla más fuerte que tus palabras.",
+                    "Da gusto ver cómo cumples tus responsabilidades.",
+                    "Tu constancia es tu súperpoder.",
+                  ];
+                  const idx = Math.floor(Math.random() * messages.length);
+                  return (
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#555",
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {messages[idx]}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
 
-        {!authUser && <AuthScreen/>}
-        {authUser && st.screen==="linkAccount" && <LinkAccountScreen st={st} dispatch={dispatch} linkUid={st.linkUid} linkEmail={st.linkEmail} linkData={st.linkData} setRoleData={setRoleData} authUser={authUser}/>}
-        {authUser && st.screen==="onboarding" && <OnboardingWizard st={st} dispatch={dispatch} authUser={authUser} setRoleData={setRoleData} setAppLoading={setAppLoading}/>}
-        {authUser && roleData && st.screen==="whoIsUsing" && <WhoIsUsingScreen st={st} dispatch={dispatch} roleData={roleData}/>}
-        {authUser && roleData && st.screen==="child"  && <ChildScreen st={st} dispatch={dispatch} onRequestNotif={requestChildNotif} showNotifPrompt={!!childKidId&&!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"} roleData={roleData} onSwitchRole={()=>dispatch({type:"SET_ACTING_AS",actingAs:null,screen:"whoIsUsing"})}/>}
-        {authUser && roleData && st.screen==="parent" && <ParentScreen st={st} dispatch={dispatch} onRequestNotif={requestParentNotif} showNotifPrompt={!!FCM_VAPID_KEY&&typeof Notification!=="undefined"&&Notification.permission==="default"} roleData={roleData} onSwitchRole={()=>dispatch({type:"SET_ACTING_AS",actingAs:null,screen:"whoIsUsing"})}/>}
+        {!authUser && <AuthScreen />}
+        {authUser && st.screen === "linkAccount" && (
+          <LinkAccountScreen
+            st={st}
+            dispatch={dispatch}
+            linkUid={st.linkUid}
+            linkEmail={st.linkEmail}
+            linkData={st.linkData}
+            setRoleData={setRoleData}
+            authUser={authUser}
+          />
+        )}
+        {authUser && st.screen === "onboarding" && (
+          <OnboardingWizard
+            st={st}
+            dispatch={dispatch}
+            authUser={authUser}
+            setRoleData={setRoleData}
+            setAppLoading={setAppLoading}
+          />
+        )}
+        {authUser && roleData && st.screen === "whoIsUsing" && (
+          <WhoIsUsingScreen st={st} dispatch={dispatch} roleData={roleData} />
+        )}
+        {authUser && roleData && st.screen === "child" && (
+          <ChildScreen
+            st={st}
+            dispatch={dispatch}
+            onRequestNotif={requestChildNotif}
+            showNotifPrompt={
+              !!childKidId &&
+              !!FCM_VAPID_KEY &&
+              typeof Notification !== "undefined" &&
+              Notification.permission === "default"
+            }
+            roleData={roleData}
+            onSwitchRole={() =>
+              dispatch({
+                type: "SET_ACTING_AS",
+                actingAs: null,
+                screen: "whoIsUsing",
+              })
+            }
+          />
+        )}
+        {authUser && roleData && st.screen === "parent" && (
+          <ParentScreen
+            st={st}
+            dispatch={dispatch}
+            onRequestNotif={requestParentNotif}
+            showNotifPrompt={
+              !!FCM_VAPID_KEY &&
+              typeof Notification !== "undefined" &&
+              Notification.permission === "default"
+            }
+            roleData={roleData}
+            onSwitchRole={() =>
+              dispatch({
+                type: "SET_ACTING_AS",
+                actingAs: null,
+                screen: "whoIsUsing",
+              })
+            }
+          />
+        )}
 
-        <Modal st={st} dispatch={dispatch} roleData={roleData}/>
+        <Modal st={st} dispatch={dispatch} roleData={roleData} />
       </div>
     </>
   );

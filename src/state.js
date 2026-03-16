@@ -1,4 +1,4 @@
-import { PRIVILEGES } from "./constants";
+import { PRIVILEGES, AVATAR_ITEMS } from "./constants";
 import {
   availableStars,
   approvedStars,
@@ -148,6 +148,21 @@ export function reducer(st, a) {
           },
         },
       };
+    case "SET_FLASH_CHALLENGES":
+      return {
+        ...st,
+        flashChallenges: Array.isArray(a.list) ? a.list : st.flashChallenges,
+      };
+    case "SET_PRIVILEGES":
+      return {
+        ...st,
+        privileges: Array.isArray(a.list) ? a.list : st.privileges,
+      };
+    case "SET_ACHIEV_OVERRIDES":
+      return {
+        ...st,
+        achievOverrides: Array.isArray(a.list) && a.list.length ? a.list : null,
+      };
     case "SET_PARENT_FCM_TOKEN":
       return {
         ...st,
@@ -211,6 +226,51 @@ export function reducer(st, a) {
         kids: { ...st.kids, [kidId]: newKid },
         notifications: [notif, ...st.notifications],
         toast: `✅ ${task?.name} enviada para aprobación`,
+      };
+    }
+
+    case "COMPLETE_DAILY_FLASH": {
+      const { kidId, stars, text } = a;
+      const kidPrev = st.kids[kidId];
+      if (!kidPrev) return st;
+      const today = new Date().toISOString().slice(0, 10);
+      const last = kidPrev.stats?.lastFlashDate || null;
+      if (last === today) {
+        return {
+          ...st,
+          toast: "🎲 Ya has hecho el reto sorpresa de hoy",
+        };
+      }
+      const dateKey = today;
+      const time = new Date().toLocaleTimeString("es-ES", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const dayLog = kidPrev.activityLog?.[dateKey] || [];
+      const entry = {
+        id: Date.now(),
+        type: "dailyFlash",
+        text,
+        stars,
+        time,
+      };
+      const kid = {
+        ...kidPrev,
+        bonusStars: (kidPrev.bonusStars || 0) + stars,
+        stats: {
+          ...kidPrev.stats,
+          lastFlashDate: today,
+        },
+        activityLog: {
+          ...(kidPrev.activityLog || {}),
+          [dateKey]: [entry, ...dayLog],
+        },
+      };
+      return {
+        ...st,
+        kids: { ...st.kids, [kidId]: kid },
+        confetti: true,
+        toast: `🎲 +${stars}⭐ por completar el reto sorpresa`,
       };
     }
 
@@ -589,7 +649,8 @@ export function reducer(st, a) {
     }
 
     case "REDEEM_PRIVILEGE": {
-      const priv = PRIVILEGES.find((p) => p.id === a.privId);
+      const list = st.privileges || PRIVILEGES;
+      const priv = list.find((p) => p.id === a.privId);
       if (!priv) return st;
       const kid = st.kids[a.kidId];
       if (availableStars(kid, st.tasks) < priv.cost)
@@ -641,6 +702,80 @@ export function reducer(st, a) {
         modal: null,
         confetti: true,
         toast: `🎉 ¡Canjeado: ${priv.name}!`,
+      };
+    }
+
+    case "REDEEM_AVATAR_ITEM": {
+      const item = AVATAR_ITEMS.find((p) => p.id === a.itemId);
+      if (!item) return st;
+      const kidPrev = st.kids[a.kidId];
+      if (!kidPrev) return st;
+      const currentItems = kidPrev.avatar?.items || [];
+      // Ya lo tiene
+      if (currentItems.includes(item.id)) {
+        return {
+          ...st,
+          toast: "👕 Ya tienes este accesorio",
+        };
+      }
+      if (availableStars(kidPrev, st.tasks) < item.cost) {
+        return {
+          ...st,
+          toast: "⭐ No tienes suficientes estrellas",
+        };
+      }
+      const dateKey = new Date().toISOString().slice(0, 10);
+      const time = new Date().toLocaleTimeString("es-ES", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const dayLog = kidPrev.activityLog?.[dateKey] || [];
+      const entry = {
+        id: Date.now(),
+        type: "avatarItem",
+        name: item.name,
+        cost: item.cost,
+        time,
+      };
+      const avatar = {
+        items: [...currentItems, item.id],
+        equipped: kidPrev.avatar?.equipped || item.id,
+      };
+      const kid = {
+        ...kidPrev,
+        spentStars: kidPrev.spentStars + item.cost,
+        avatar,
+        activityLog: {
+          ...(kidPrev.activityLog || {}),
+          [dateKey]: [entry, ...dayLog],
+        },
+      };
+      return {
+        ...st,
+        kids: { ...st.kids, [a.kidId]: kid },
+        modal: null,
+        confetti: true,
+        toast: `🧢 Nuevo accesorio: ${item.name}`,
+      };
+    }
+
+    case "EQUIP_AVATAR_ITEM": {
+      const kidPrev = st.kids[a.kidId];
+      if (!kidPrev) return st;
+      const items = kidPrev.avatar?.items || [];
+      if (!items.includes(a.itemId)) return st;
+      const avatar = {
+        items,
+        equipped: a.itemId,
+      };
+      const kid = {
+        ...kidPrev,
+        avatar,
+      };
+      return {
+        ...st,
+        kids: { ...st.kids, [a.kidId]: kid },
+        toast: "👕 Avatar actualizado",
       };
     }
 

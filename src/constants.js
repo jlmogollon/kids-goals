@@ -89,6 +89,15 @@ export const PRIVILEGES = [
   { id:"p6", name:"Videojuego nuevo",     cost:80, emoji:"🎮", desc:"Un juego a elegir" },
 ];
 
+export const AVATAR_ITEMS = [
+  { id:"hat_star",     name:"Gorro con estrella",        cost:8,  emoji:"🎩", slot:"head" },
+  { id:"glasses_cool", name:"Gafas súper chulas",        cost:10, emoji:"😎", slot:"face" },
+  { id:"bg_space",     name:"Fondo espacial",            cost:12, emoji:"🪐", slot:"background" },
+  { id:"frame_gold",   name:"Marco dorado",              cost:14, emoji:"🟡", slot:"frame" },
+  { id:"hat_crown",    name:"Corona de campeón",         cost:18, emoji:"👑", slot:"head" },
+  { id:"pet_dragon",   name:"Mini dragón compañero",     cost:20, emoji:"🐉", slot:"pet" },
+];
+
 export const DEFAULT_CHALLENGES = [
   {
     id:"streak_biblia_7",

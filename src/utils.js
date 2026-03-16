@@ -1,4 +1,4 @@
-import { ACHIEV, INIT_TASKS, STARS_PER_EURO, LEVELS, KID_COLORS } from "./constants";
+import { ACHIEV, INIT_TASKS, STARS_PER_EURO, LEVELS, KID_COLORS, PRIVILEGES } from "./constants";
 
 export function getTodayIdx() {
   const d = new Date().getDay();
@@ -163,11 +163,26 @@ export function mkKid(name, dob) {
     achievements: [],
     bonusStars: 0,
     spentStars: 0,     // stars spent on privileges
-    stats: { totalDone:0, streak:0, musicDays:0, hygieneStreak:0, taskStreaks:{}, allToday:false, wishApproved:0, approvedStars:0 },
+    stats: {
+      totalDone: 0,
+      streak: 0,
+      musicDays: 0,
+      hygieneStreak: 0,
+      taskStreaks: {},
+      allToday: false,
+      wishApproved: 0,
+      approvedStars: 0,
+      // Fecha (YYYY-MM-DD) del último "reto flash" diario completado
+      lastFlashDate: null,
+    },
     profile: {
       grade: "",           // Nivel de estudios (ej: "2º ESO")
       strengths: "",       // Fortalezas (texto libre)
       focusAreas: "",      // Ámbitos a reforzar
+    },
+    avatar: {
+      items: [],          // ids de accesorios desbloqueados
+      equipped: null,     // id del accesorio actualmente equipado
     },
     payments: [],      // { id, amount, note, date }
     wishlist: [],      // { id, name, cost, emoji, approved, denied }
@@ -194,6 +209,9 @@ export function initState() {
     notifications: [],
     approvalLog: [],
     challenges: [],
+    flashChallenges: null, // lista editable de retos flash (si es null se usan los predeterminados)
+    privileges: PRIVILEGES, // lista editable de privilegios
+    achievOverrides: null,  // overrides opcionales de texto/emoji para logros
     weeklyGoal: { target: 40, current: 0 },
     childTab: "hoy",
     parentTab: "inicio",
