@@ -3171,18 +3171,38 @@ export default function App() {
         delete merged.parentFcmToken;
       }
       const pr = (roleData?.role === "mother" || roleData?.role === "father") ? roleData.role : null;
-      rawDispatch(prev => ({
-        ...prev, ...merged,
-        // Solo actualizar tasks si la versión de Firestore es >= a la versión local (evitar que datos
-        // antiguos en vuelo sobrescriban una eliminación/edición que aún no se confirmó en el servidor)
-        tasks: (merged.tasksVersion ?? 0) >= (prev.tasksVersion ?? 0) ? merged.tasks : prev.tasks,
-        tasksVersion: Math.max(merged.tasksVersion ?? 0, prev.tasksVersion ?? 0),
-        screen: prev.screen, modal: prev.modal, toast: prev.toast,
-        confetti: prev.confetti, loggedAccount: prev.loggedAccount,
-        ...(roleData?.role === "child" ? { activeKid: roleData.kidId || prev.activeKid } : {}),
-        // Preservar foto del padre/madre actual si la tenemos localmente (evitar que subscribe sobrescriba antes de guardar)
-        ...(pr && prev.parents?.[pr]?.photo && !merged.parents?.[pr]?.photo ? { parents: { ...(merged.parents||prev.parents), [pr]: { ...(merged.parents?.[pr]||prev.parents[pr]), photo: prev.parents[pr].photo } } } : {}),
-      }));
+      rawDispatch(prev => {
+        // Fusionar notificaciones sin perder las locales recientes
+        const incomingNotifs = Array.isArray(merged.notifications) ? merged.notifications : [];
+        const prevNotifs = Array.isArray(prev.notifications) ? prev.notifications : [];
+        const seen = new Set(incomingNotifs.map(n => n.id));
+        const mergedNotifications = [...incomingNotifs, ...prevNotifs.filter(n => !seen.has(n.id))];
+
+        return {
+          ...prev,
+          ...merged,
+          // Solo actualizar tasks si la versión de Firestore es >= a la versión local (evitar que datos
+          // antiguos en vuelo sobrescriban una eliminación/edición que aún no se confirmó en el servidor)
+          tasks: (merged.tasksVersion ?? 0) >= (prev.tasksVersion ?? 0) ? merged.tasks : prev.tasks,
+          tasksVersion: Math.max(merged.tasksVersion ?? 0, prev.tasksVersion ?? 0),
+          notifications: mergedNotifications,
+          screen: prev.screen,
+          modal: prev.modal,
+          toast: prev.toast,
+          confetti: prev.confetti,
+          loggedAccount: prev.loggedAccount,
+          ...(roleData?.role === "child" ? { activeKid: roleData.kidId || prev.activeKid } : {}),
+          // Preservar foto del padre/madre actual si la tenemos localmente (evitar que subscribe sobrescriba antes de guardar)
+          ...(pr && prev.parents?.[pr]?.photo && !merged.parents?.[pr]?.photo
+            ? {
+                parents: {
+                  ...(merged.parents || prev.parents),
+                  [pr]: { ...(merged.parents?.[pr] || prev.parents[pr]), photo: prev.parents[pr].photo },
+                },
+              }
+            : {}),
+        };
+      });
     });
     return unsub;
   }, [authUser, familyId]);
