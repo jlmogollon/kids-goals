@@ -100,6 +100,12 @@ async function saveAppState(familyId, state)   {
   if(!familyId) return;
   const {screen,modal,toast,confetti,loggedAccount,authUser,loading,actingAs,...data}=state;
   const toSave={...data};
+  // Evita que un dispositivo que aún no ha recibido notificaciones (y tiene
+  // `notifications: []` en memoria) sobrescriba en Firestore las notificaciones
+  // que vienen de otro dispositivo.
+  if(Array.isArray(toSave.notifications) && toSave.notifications.length===0){
+    delete toSave.notifications;
+  }
   if(toSave.parent) { delete toSave.parent; }
   if(toSave.parentFcmToken) { delete toSave.parentFcmToken; }
   return setDoc(doc(db,"appData",familyId),toSave);
