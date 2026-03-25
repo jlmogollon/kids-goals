@@ -679,7 +679,74 @@ function WhoIsUsingScreen({ st, dispatch, roleData }) {
 // ═══════════════════════════════════════════════════════════════════════
 // CHILD SCREEN
 // ═══════════════════════════════════════════════════════════════════════
-function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, onSwitchRole }) {
+function SwipeRefresh({ onRefresh, children }) {
+  const [pull, setPull] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const startY = useRef(null);
+
+  function isAtTop() {
+    if (typeof window === "undefined") return true;
+    const y = window.scrollY ?? document.documentElement?.scrollTop ?? 0;
+    return y <= 0;
+  }
+
+  const handleStart = (e) => {
+    if (refreshing) return;
+    if (!isAtTop()) return;
+    const y = e?.touches?.[0]?.clientY;
+    if (typeof y !== "number") return;
+    startY.current = y;
+    setPull(0);
+  };
+
+  const handleMove = (e) => {
+    if (refreshing) return;
+    if (startY.current == null) return;
+    const y = e?.touches?.[0]?.clientY;
+    if (typeof y !== "number") return;
+    const diff = y - startY.current;
+    if (diff <= 0) return;
+    setPull(Math.min(diff, 90));
+  };
+
+  const handleEnd = () => {
+    if (refreshing) return;
+    const should = pull >= 60;
+    if (should && onRefresh) {
+      setRefreshing(true);
+      Promise.resolve(onRefresh())
+        .catch(() => {})
+        .finally(() => {
+          setRefreshing(false);
+          setPull(0);
+          startY.current = null;
+        });
+    } else {
+      setPull(0);
+      startY.current = null;
+    }
+  };
+
+  const pct = Math.min(100, Math.round((pull / 60) * 100));
+
+  return (
+    <div onTouchStart={handleStart} onTouchMove={handleMove} onTouchEnd={handleEnd} style={{ width: "100%" }}>
+      {pull > 12 && !refreshing && (
+        <div style={{ width: "100%", textAlign: "center", fontSize: 12, fontWeight: 900, color: "#4A7A1E", marginBottom: 6 }}>
+          ↻ Soltar para actualizar ({pct}%)
+        </div>
+      )}
+      {refreshing && (
+        <div style={{ width: "100%", textAlign: "center", fontSize: 12, fontWeight: 900, color: "#888", marginBottom: 6 }}>
+          Actualizando…
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, onSwitchRole, onSwipeRefresh }) {
   const kidIds = (st.kidsOrder && st.kidsOrder.length
     ? st.kidsOrder.filter(id=>st.kids[id])
     : Object.keys(st.kids || {}));
@@ -757,7 +824,8 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
       </div>
 
       {/* Scrollable content */}
-      <div className="scroll-body">
+      <SwipeRefresh onRefresh={onSwipeRefresh}>
+        <div className="scroll-body">
         {showNotifPrompt&&onRequestNotif&&(
           <button onClick={onRequestNotif} style={{width:"100%",background:`linear-gradient(135deg,${th.p},${th.a})`,color:"#fff",border:"none",borderRadius:16,padding:14,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,cursor:"pointer",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
             🔔 Activar notificaciones — recibirás avisos cuando papá/mamá apruebe tus tareas
@@ -780,7 +848,8 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
         )}
         {st.childTab==="logros"    && <ChildLogros kid={kid} kidId={kidId} as={as} th={th} achievOverrides={st.achievOverrides}/>}
         {st.childTab==="mas"       && <ChildMas kidId={kidId} kid={kid} st={st} th={th} dispatch={dispatch} challenges={st.challenges||[]}/>}
-      </div>
+        </div>
+      </SwipeRefresh>
 
       <div className="tab-bar">
         {tabs.map(t=>(
@@ -1549,7 +1618,7 @@ const MoneyPanel = memo(function MoneyPanel({ kidId, kid, tasks, th, isParent, d
 // PARENT SCREEN
 // ═══════════════════════════════════════════════════════════════════════
 const PARENT_ROLE_LABEL = { father: "Papá", mother: "Mamá" };
-function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, onSwitchRole }) {
+function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, onSwitchRole, onSwipeRefresh }) {
   const parentRole = (roleData?.role === "mother" || roleData?.role === "father") ? roleData.role : "father";
   const currentParent = st.parents?.[parentRole] || { photo: null, name: PARENT_ROLE_LABEL[parentRole] };
   const th = parentRole === "mother" ? { ...TH.parent, p: "#E91E8C", a: "#C2185B", l: "#FCE4EC", d: "#880E4F" } : TH.parent;
@@ -1606,7 +1675,8 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
       </div>
 
       {/* Scrollable content */}
-      <div className="scroll-body">
+      <SwipeRefresh onRefresh={onSwipeRefresh}>
+        <div className="scroll-body">
         {showNotifPrompt&&onRequestNotif&&(
           <button onClick={onRequestNotif} style={{width:"100%",background:"linear-gradient(135deg,#4A7A1E,#2D5010)",color:"#fff",border:"none",borderRadius:16,padding:14,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,cursor:"pointer",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
             🔔 Activar notificaciones — recibirás avisos cuando los niños completen tareas
@@ -1643,7 +1713,8 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
             <ParentHistory st={st}/>
           </>
         )}
-      </div>
+        </div>
+      </SwipeRefresh>
 
       <div className="tab-bar">
         {tabs.map(t=>(
@@ -3056,6 +3127,62 @@ export default function App() {
     if (fid) saveAppState(fid, state).catch(console.error);
   }, 500), []);
 
+  // Manual refresh (swipe to refresh)
+  const refreshFromServer = useCallback(async () => {
+    const fid = familyId;
+    if (!authUser || !fid) return;
+    try {
+      const saved = await loadAppState(fid);
+      if (!saved) return;
+
+      rawDispatch((prev) => {
+        // Fusionar notificaciones sin perder las locales recientes
+        const incomingNotifs = Array.isArray(saved.notifications) ? saved.notifications : [];
+        const prevNotifs = Array.isArray(prev.notifications) ? prev.notifications : [];
+        const seen = new Set(incomingNotifs.map((n) => n.id));
+        const mergedNotifications = [
+          ...incomingNotifs,
+          ...prevNotifs.filter((n) => !seen.has(n.id)),
+        ];
+
+        const tasks =
+          (saved.tasksVersion ?? 0) >= (prev.tasksVersion ?? 0) ? saved.tasks : prev.tasks;
+        const tasksVersion = Math.max(saved.tasksVersion ?? 0, prev.tasksVersion ?? 0);
+
+        const pr =
+          roleData?.role === "mother" || roleData?.role === "father" ? roleData.role : null;
+
+        return {
+          ...prev,
+          ...saved,
+          tasks,
+          tasksVersion,
+          notifications: mergedNotifications,
+          // Mantener UI temporal
+          screen: prev.screen,
+          modal: prev.modal,
+          toast: prev.toast,
+          confetti: prev.confetti,
+          loggedAccount: prev.loggedAccount,
+          ...(roleData?.role === "child" ? { activeKid: roleData.kidId || prev.activeKid } : {}),
+          ...(pr && prev.parents?.[pr]?.photo && !saved.parents?.[pr]?.photo
+            ? {
+                parents: {
+                  ...(saved.parents || prev.parents),
+                  [pr]: {
+                    ...(saved.parents?.[pr] || prev.parents[pr]),
+                    photo: prev.parents[pr].photo,
+                  },
+                },
+              }
+            : {}),
+        };
+      });
+    } catch (e) {
+      console.warn("Manual refresh failed:", e);
+    }
+  }, [authUser, familyId, roleData]);
+
   // Save to Firestore whenever state changes (skip initial load)
   const isFirstRender = useRef(true);
   useEffect(() => {
@@ -3466,6 +3593,7 @@ export default function App() {
                 screen: "whoIsUsing",
               })
             }
+            onSwipeRefresh={refreshFromServer}
           />
         )}
         {authUser && roleData && st.screen === "parent" && (
@@ -3486,6 +3614,7 @@ export default function App() {
                 screen: "whoIsUsing",
               })
             }
+            onSwipeRefresh={refreshFromServer}
           />
         )}
 
