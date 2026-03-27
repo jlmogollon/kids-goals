@@ -517,13 +517,14 @@ function OnboardingWizard({ st, dispatch, authUser, setRoleData, setAppLoading }
 }
 
 // ─── QUIÉN USA LA APP (cambio de rol / PIN por rol) ──────────────────────────
-function WhoIsUsingScreen({ st, dispatch, roleData }) {
+function WhoIsUsingScreen({ st, dispatch, roleData, onSwipeRefresh }) {
   const [selected, setSelected] = useState(null);
   const [pinInput, setPinInput] = useState("");
   const [pinSaved, setPinSaved] = useState("");
   const [pinStep, setPinStep] = useState(null); // null | "enter" | "create" | "confirm"
   const [error, setError] = useState("");
 
+  const { touchHandlers, indicator } = useSwipeRefresh(onSwipeRefresh || (() => {}));
   const kidIds = getStateKidIds(st);
   const rolePins = st.rolePins || {};
   const fid = st.loggedAccount?.familyId || roleData?.familyId || "main";
@@ -635,7 +636,8 @@ function WhoIsUsingScreen({ st, dispatch, roleData }) {
   const currentEmail = (st.loggedAccount?.email || roleData?.email || "") || null;
 
   return (
-    <div className="screen" style={{background:"linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 60%,#FFFBEA 100%)",alignItems:"center",justifyContent:"center",overflowY:"auto",padding:`${rem(32)} ${rem(20)}`}}>
+    <div className="screen" style={{background:"linear-gradient(160deg,#F0FAE6 0%,#EBF8FF 60%,#FFFBEA 100%)",alignItems:"center",justifyContent:"center",overflowY:"auto",padding:`${rem(32)} ${rem(20)}`}} {...touchHandlers}>
+      {indicator}
       {!pinStep ? (
         <div style={{width:"100%",maxWidth:rem(460),display:"flex",flexDirection:"column",alignItems:"center",gap:rem(24)}}>
           <div style={{textAlign:"center"}}>
@@ -3585,7 +3587,7 @@ export default function App() {
           />
         )}
         {authUser && roleData && st.screen === "whoIsUsing" && (
-          <WhoIsUsingScreen st={st} dispatch={dispatch} roleData={roleData} />
+          <WhoIsUsingScreen st={st} dispatch={dispatch} roleData={roleData} onSwipeRefresh={refreshFromServer} />
         )}
         {authUser && roleData && st.screen === "child" && (
           <ChildScreen
