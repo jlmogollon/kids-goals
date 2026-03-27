@@ -44,6 +44,11 @@ function emailKey(email) { return (email||"").replace(/\./g,"_").toLowerCase(); 
 async function getFamilyByEmail(email) { const s=await getDoc(doc(db,"emailToFamily",emailKey(email))); return s.exists()?s.data():null; }
 async function setEmailToFamily(email, data) { if(!email) return; return setDoc(doc(db,"emailToFamily",emailKey(email)),data); }
 
+function getStateKidIds(st) {
+  const preferred = Array.isArray(st?.kidsOrder) ? st.kidsOrder : [];
+  return getOrderedKidIds(st?.kids || {}, preferred);
+}
+
 async function loadAppState(familyId) {
   if(!familyId) return null;
   let s=await getDoc(doc(db,"appData",familyId));
@@ -127,8 +132,8 @@ function subscribeAppState(familyId, cb) {
   return onSnapshot(doc(db,"appData",familyId),(s)=>{ if(s.exists()) cb(s.data()); });
 }
 
-import { TH, PALETTE, CAT_CLR, STARS_PER_EURO, DAY_LABELS, DAY_FULL, ACHIEV, INIT_TASKS, RELATIONSHIP_LABELS, KID_COLORS, DEFAULT_CHALLENGES, PRIVILEGES, AVATAR_ITEMS } from "./constants";
-import { getTodayIdx, taskActiveOn, taskActiveToday, calcAge, getLevel, getNextLevel, getStreakMult, fmt, isToday, approvedStars, availableStars, pendingStars, totalEuros, paidOut, balance, kidName, checkNewAchievements, computeStreak, getKidColor, mkKid, initState } from "./utils";
+import { TH, PALETTE, CAT_CLR, STARS_PER_EURO, DAY_LABELS, DAY_FULL, ACHIEV, INIT_TASKS, RELATIONSHIP_LABELS, DEFAULT_CHALLENGES, PRIVILEGES } from "./constants";
+import { getTodayIdx, taskActiveOn, taskActiveToday, calcAge, getLevel, getNextLevel, getStreakMult, fmt, isToday, approvedStars, availableStars, pendingStars, totalEuros, paidOut, balance, kidName, checkNewAchievements, computeStreak, getKidColor, getOrderedKidIds, mkKid, initState } from "./utils";
 import { reducer } from "./state";
 import { Confetti, Avatar, ProgressBar, StarBadge, HomeWidget } from "./components/ui.jsx";
 
@@ -519,9 +524,11 @@ function WhoIsUsingScreen({ st, dispatch, roleData }) {
   const [pinStep, setPinStep] = useState(null); // null | "enter" | "create" | "confirm"
   const [error, setError] = useState("");
 
-  const kidIds = Object.keys(st.kids || {});
+  const kidIds = getStateKidIds(st);
   const rolePins = st.rolePins || {};
-  const isAdmin = (st.loggedAccount?.email || roleData?.email || "").toLowerCase().includes("monsterk17");
+  const fid = st.loggedAccount?.familyId || roleData?.familyId || "main";
+  const lastRoleKey = `kg:last-role:${fid}`;
+  const trustedPinKey = (roleKey) => `kg:trusted-pin:${fid}:${roleKey}`;
 
   const members = [
     ...(st.parents?.father?.name ? [{ id:"father", role:"father", label:st.parents.father.name, photo:st.parents.father.photo, emoji:"👨", color:"#FFB800", colorDark:"#CC8800" }] : []),
@@ -529,12 +536,27 @@ function WhoIsUsingScreen({ st, dispatch, roleData }) {
     ...kidIds.map((id, i) => {
       const kid = st.kids[id];
       const isGirl = ["Hija","Sobrina","Prima"].includes(kid?.label || "");
-      const c = KID_COLORS[i % KID_COLORS.length];
+      const c = getKidColor(id, i);
       return { id, role:"child", kidId:id, label:kid?.name||id, photo:kid?.photo, emoji:isGirl?"👧":"👦", color:c.p, colorDark:c.a };
     }),
   ].filter(m => m.label);
 
   function getRoleKey(m) { return m.role === "child" ? m.kidId : m.role; }
+  function saveLastRole(m) {
+    try {
+      const payload = m.role === "child" ? { role: "child", kidId: m.kidId || null } : { role: m.role };
+      localStorage.setItem(lastRoleKey, JSON.stringify(payload));
+    } catch {}
+  }
+  function isPinTrusted(roleKey) {
+    try { return localStorage.getItem(trustedPinKey(roleKey)) === "1"; } catch { return false; }
+  }
+  function trustPin(roleKey) {
+    try { localStorage.setItem(trustedPinKey(roleKey), "1"); } catch {}
+  }
+  function clearTrustedPin(roleKey) {
+    try { localStorage.removeItem(trustedPinKey(roleKey)); } catch {}
+  }
   function isCurrentRole(m) {
     if (!st.actingAs) return false;
     return m.role === "child"
@@ -543,29 +565,64 @@ function WhoIsUsingScreen({ st, dispatch, roleData }) {
   }
   function goToRole(m) {
     const isP = m.role === "father" || m.role === "mother";
+    saveLastRole(m);
     dispatch({ type:"SET_ACTING_AS", actingAs:isP?{role:m.role}:{role:"child",kidId:m.kidId}, screen:isP?"parent":"child", activeKid:m.kidId||null });
   }
   function handleSelect(m) {
     if (isCurrentRole(m)) { goToRole(m); return; }
+    const roleKey = getRoleKey(m);
+    const hasPin = !!rolePins[roleKey];
+    if (!hasPin || isPinTrusted(roleKey)) {
+      goToRole(m);
+      return;
+    }
     setSelected(m); setError(""); setPinInput(""); setPinSaved("");
-    setPinStep(rolePins[getRoleKey(m)] ? "enter" : "create");
+    setPinStep("enter");
   }
   function handlePinNext() {
     if (pinInput.length < 4) { setError("Introduce los 4 dígitos"); return; }
+    const roleKey = getRoleKey(selected);
     if (pinStep === "enter") {
-      if (pinInput === rolePins[getRoleKey(selected)]) goToRole(selected);
+      if (pinInput === rolePins[roleKey]) {
+        trustPin(roleKey);
+        goToRole(selected);
+      }
       else { setError("Clave incorrecta ❌"); setPinInput(""); }
     } else if (pinStep === "create") {
       setPinSaved(pinInput); setPinInput(""); setPinStep("confirm"); setError("");
     } else if (pinStep === "confirm") {
       if (pinInput !== pinSaved) { setError("Las claves no coinciden ❌"); setPinInput(""); }
-      else { dispatch({ type:"SET_ROLE_PIN", roleKey:getRoleKey(selected), pin:pinInput }); goToRole(selected); }
+      else {
+        dispatch({ type:"SET_ROLE_PIN", roleKey, pin:pinInput });
+        trustPin(roleKey);
+        goToRole(selected);
+      }
     }
   }
-  function handleReset() {
-    dispatch({ type:"RESET_ROLE_PIN", roleKey:getRoleKey(selected) });
+  function handleForgotPin() {
+    const roleKey = getRoleKey(selected);
+    dispatch({ type:"RESET_ROLE_PIN", roleKey });
+    clearTrustedPin(roleKey);
     setError(""); setPinInput(""); setPinStep("create");
   }
+
+  useEffect(() => {
+    if (!members.length || selected || pinStep) return;
+    try {
+      const raw = localStorage.getItem(lastRoleKey);
+      if (!raw) return;
+      const last = JSON.parse(raw);
+      const target = members.find((m) =>
+        m.role === "child"
+          ? last?.role === "child" && m.kidId === last?.kidId
+          : last?.role === m.role
+      );
+      if (!target) return;
+      const roleKey = getRoleKey(target);
+      if (rolePins[roleKey] && !isPinTrusted(roleKey)) return;
+      goToRole(target);
+    } catch {}
+  }, [members.length, rolePins, pinStep, selected]);
 
   if (members.length === 0) {
     const isP = st.loggedAccount?.role==="father"||st.loggedAccount?.role==="mother";
@@ -659,9 +716,9 @@ function WhoIsUsingScreen({ st, dispatch, roleData }) {
             style={{width:"100%",padding:rem(14),background:pinInput.length===4?`linear-gradient(135deg,${selected?.color||"#4A7A1E"},${selected?.colorDark||"#2D5010"})`:"#eee",color:pinInput.length===4?"#fff":"#aaa",border:"none",borderRadius:rem(14),fontWeight:900,fontSize:rem(16),cursor:pinInput.length===4?"pointer":"default",fontFamily:"'Nunito',sans-serif"}}>
             {pinStep==="enter"?"Entrar →":pinStep==="create"?"Continuar →":"Confirmar ✓"}
           </button>
-          {pinStep==="enter"&&isAdmin&&(
-            <button onClick={handleReset} style={{background:"none",border:"none",color:"#999",fontSize:rem(12),cursor:"pointer",textDecoration:"underline",padding:0,fontFamily:"'Nunito',sans-serif"}}>
-              Restablecer clave (administrador)
+          {pinStep==="enter"&&(
+            <button onClick={handleForgotPin} style={{background:"none",border:"none",color:"#999",fontSize:rem(12),cursor:"pointer",textDecoration:"underline",padding:0,fontFamily:"'Nunito',sans-serif"}}>
+              Olvidar contraseña
             </button>
           )}
           {pinStep==="create"&&(
@@ -741,9 +798,7 @@ function useSwipeRefresh(onRefresh) {
 }
 
 function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, onSwitchRole, onSwipeRefresh }) {
-  const kidIds = (st.kidsOrder && st.kidsOrder.length
-    ? st.kidsOrder.filter(id=>st.kids[id])
-    : Object.keys(st.kids || {}));
+  const kidIds = getStateKidIds(st);
   const kidId = st.activeKid || st.actingAs?.kidId || roleData?.kidId || kidIds[0];
   const kid = kidId ? st.kids[kidId] : (kidIds.length ? st.kids[kidIds[0]] : null);
   if (!kid) return <div className="screen" style={{display:"flex",alignItems:"center",justifyContent:"center",background:"#f5f5f5"}}><p>No hay ningún niño. Añade uno en la configuración.</p></div>;
@@ -1572,9 +1627,7 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
     {id:"recompensas", icon:"🎁",       label:"Recompensas"},
     {id:"cuentas",     icon:"⚙️",       label:"Cuentas"},
   ];
-  const kidIds = (st.kidsOrder && st.kidsOrder.length
-    ? st.kidsOrder.filter(id=>st.kids[id])
-    : Object.keys(st.kids||{}));
+  const kidIds = getStateKidIds(st);
 
   const { touchHandlers, indicator } = useSwipeRefresh(onSwipeRefresh);
   return (
@@ -1983,7 +2036,7 @@ const ParentNotifs = memo(function ParentNotifs({ st, dispatch, parentRole }) {
         </p>
       </div>
       {/* Wish notifications from kids */}
-      {(Object.keys(st.kids||{})).map(id=>st.kids[id].wishlist.filter(w=>!w.approved&&!w.denied).map(w=>(
+      {(getStateKidIds(st)).map(id=>st.kids[id].wishlist.filter(w=>!w.approved&&!w.denied).map(w=>(
         <div key={w.id} className="card" style={{border:"2px solid #FFB80088",background:"#FFFBEA",animation:"slideUp .3s both"}}>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
             <div style={{fontSize:28}}>{w.emoji||"🌟"}</div>
@@ -2061,7 +2114,7 @@ function ParentMensajesYGratitud({ st, dispatch }) {
       <div className="card" style={{marginBottom:12}}>
         <h3 style={{fontWeight:900,marginBottom:4}}>💬 Centro de mensajes</h3>
         <p style={{fontSize:12,color:"#666",marginBottom:14}}>Mensajes enviados a los niños (y motivos de rechazo). Podéis editar o eliminar cualquiera.</p>
-        {(Object.keys(st.kids||{})).map((id,i)=>{
+        {(getStateKidIds(st)).map((id,i)=>{
           const k=st.kids[id];
           const msgs=[...(k.messages||[])].reverse();
           const limitedMsgs = msgs.slice(0,3);
@@ -2099,7 +2152,7 @@ function ParentMensajesYGratitud({ st, dispatch }) {
       <div className="card">
         <h3 style={{fontWeight:900,marginBottom:4}}>📝 Gratitud de hoy (niños)</h3>
         <p style={{fontSize:12,color:"#666",marginBottom:14}}>Lo que escriben los niños en su sección de gratitud.</p>
-        {(Object.keys(st.kids||{})).map((id,i)=>{
+        {(getStateKidIds(st)).map((id,i)=>{
           const k=st.kids[id];
           const grat=[...(k.gratitude||[])].reverse();
           const limitedGrat = grat.slice(0,3);
@@ -2203,7 +2256,7 @@ function ParentTareas({ st, dispatch }) {
 
 // ─── PARENT DINERO ──────────────────────────────────────────────
 function ParentDinero({ st, dispatch }) {
-  const kidIds=Object.keys(st.kids||{});
+  const kidIds=getStateKidIds(st);
   const [activeKid,setActiveKid]=useState(null);
   useEffect(()=>{ if(kidIds.length && (activeKid==null||!kidIds.includes(activeKid))) setActiveKid(kidIds[0]); },[kidIds.join(",")]);
   const kid=activeKid?st.kids[activeKid]:null;
@@ -2240,11 +2293,18 @@ function ParentDinero({ st, dispatch }) {
 
 // ─── PARENT RANKING ─────────────────────────────────────────────
 function ParentRanking({ st, dispatch }) {
-  const kids=(Object.keys(st.kids||{})).map((id,i)=>({
-    id, kid:st.kids[id], as:approvedStars(st.kids[id],st.tasks), lv:getLevel(approvedStars(st.kids[id],st.tasks)),
-    euros:totalEuros(st.kids[id],st.tasks), done:Object.values(st.kids[id].completions||{}).filter(v=>v.done).length,
-    ach:st.kids[id].achievements.length, streak:st.kids[id].stats.streak||0,
-  })).sort((a,b)=>b.as-a.as);
+  const kids=(getStateKidIds(st)).map((id,i)=>(
+    {
+      id,
+      kid:st.kids[id],
+      as:approvedStars(st.kids[id],st.tasks),
+      lv:getLevel(approvedStars(st.kids[id],st.tasks)),
+      euros:totalEuros(st.kids[id],st.tasks),
+      done:Object.values(st.kids[id].completions||{}).filter(v=>v.done).length,
+      ach:st.kids[id].achievements.length,
+      streak:st.kids[id].stats.streak||0,
+    }
+  )).sort((a,b)=>b.as-a.as);
 
   return (
     <>
@@ -2280,7 +2340,7 @@ function ParentRanking({ st, dispatch }) {
         <div className="card">
           <h3 style={{fontWeight:900,marginBottom:12}}>⚔️ Retos activos</h3>
           {st.challenges.map(c=>{
-            const ids=Object.keys(st.kids||{});
+            const ids=getStateKidIds(st);
             const k1=ids[0], k2=ids[1];
             const th1=k1?getKidColor(k1,0):TH.parent, th2=k2?getKidColor(k2,1):TH.parent;
             return (
@@ -2300,7 +2360,7 @@ function ParentRanking({ st, dispatch }) {
       {/* Weekly report card */}
       <div className="card" style={{border:"2px solid #FFB80044"}}>
         <h3 style={{fontWeight:900,marginBottom:12}}>📊 Informe semanal</h3>
-        {(Object.keys(st.kids||{})).map((id,i)=>{
+        {(getStateKidIds(st)).map((id,i)=>{
           const k=st.kids[id]; const kth=getKidColor(id,i); const as=approvedStars(k,st.tasks);
           return (
             <div key={id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i>0?"1px solid #f0f0f0":"none"}}>
@@ -2321,7 +2381,7 @@ function ParentRanking({ st, dispatch }) {
         <button onClick={()=>{
           const w=window.open("","_blank","width=800,height=600");
           if(!w) { dispatch?.({type:"TOAST",msg:"Permite ventanas emergentes para exportar"}); return; }
-          const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Informe Kids Goals</title><style>body{font-family:sans-serif;padding:24px;max-width:600px;margin:0 auto}h1{color:#2D5010}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;border-bottom:1px solid #eee}.r{text-align:right}</style></head><body><h1>📊 Informe semanal Kids Goals</h1><p><small>${new Date().toLocaleDateString("es-ES",{day:"2-digit",month:"long",year:"numeric"})}</small></p><table><thead><tr><th>Niño</th><th>Estrellas</th><th class="r">Euros</th><th class="r">Logros</th><th class="r">Tareas</th></tr></thead><tbody>${(Object.keys(st.kids||{})).map(id=>{const k=st.kids[id];const as=approvedStars(k,st.tasks);return `<tr><td><strong>${k.name}</strong></td><td>${as}⭐</td><td class="r">${totalEuros(k,st.tasks)}€</td><td class="r">${k.achievements.length}</td><td class="r">${k.stats.totalDone||0}</td></tr>`}).join("")}</tbody></table><p style="margin-top:24px;color:#888;font-size:12px">Kids Goals — Informe generado automáticamente</p></body></html>`;
+          const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Informe Kids Goals</title><style>body{font-family:sans-serif;padding:24px;max-width:600px;margin:0 auto}h1{color:#2D5010}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;border-bottom:1px solid #eee}.r{text-align:right}</style></head><body><h1>📊 Informe semanal Kids Goals</h1><p><small>${new Date().toLocaleDateString("es-ES",{day:"2-digit",month:"long",year:"numeric"})}</small></p><table><thead><tr><th>Niño</th><th>Estrellas</th><th class="r">Euros</th><th class="r">Logros</th><th class="r">Tareas</th></tr></thead><tbody>${(getStateKidIds(st)).map(id=>{const k=st.kids[id];const as=approvedStars(k,st.tasks);return `<tr><td><strong>${k.name}</strong></td><td>${as}⭐</td><td class="r">${totalEuros(k,st.tasks)}€</td><td class="r">${k.achievements.length}</td><td class="r">${k.stats.totalDone||0}</td></tr>`}).join("")}</tbody></table><p style="margin-top:24px;color:#888;font-size:12px">Kids Goals — Informe generado automáticamente</p></body></html>`;
           w.document.write(html);
           w.document.close();
           w.focus();
@@ -2335,7 +2395,7 @@ function ParentRanking({ st, dispatch }) {
 }
 
 function ParentHistory({ st }) {
-  const kidIds=Object.keys(st.kids||{});
+  const kidIds=getStateKidIds(st);
   const [kidId,setKidId]=useState(null);
   useEffect(()=>{ if(kidIds.length && (kidId==null||!kidIds.includes(kidId))) setKidId(kidIds[0]); },[kidIds.join(",")]);
   const kid=kidId?st.kids[kidId]:null;
@@ -2582,9 +2642,7 @@ function ParentConfig({ st, dispatch, parentRole, currentParent, familyId, onlyK
       )}
       {/* Kids */}
       {(() => {
-        const ids = (st.kidsOrder && st.kidsOrder.length
-          ? st.kidsOrder.filter(id=>st.kids[id])
-          : Object.keys(st.kids||{}));
+        const ids = getStateKidIds(st);
         return ids.map((id,i)=>(
           <KidEditor
             key={id}
@@ -2605,7 +2663,7 @@ function ParentConfig({ st, dispatch, parentRole, currentParent, familyId, onlyK
             {[
               ...(st.parents?.father?.name ? [{key:"father",label:st.parents.father.name,emoji:"👨"}] : []),
               ...(st.parents?.mother?.name ? [{key:"mother",label:st.parents.mother.name,emoji:"👩"}] : []),
-              ...Object.keys(st.kids||{}).map((id,i)=>{const isGirl=["Hija","Sobrina","Prima"].includes(st.kids[id]?.label||"");return{key:id,label:st.kids[id]?.name||id,emoji:isGirl?"👧":"👦"};})
+              ...getStateKidIds(st).map((id,i)=>{const isGirl=["Hija","Sobrina","Prima"].includes(st.kids[id]?.label||"");return{key:id,label:st.kids[id]?.name||id,emoji:isGirl?"👧":"👦"};})
             ].map(({key,label,emoji})=>(
               <div key={key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f8f8f8"}}>
                 <span style={{fontSize:13,color:"#444"}}>{emoji} {label}: <span style={{color:(st.rolePins||{})[key]?"#4A7A1E":"#aaa"}}>{(st.rolePins||{})[key]?"🔐 protegido":"🔓 sin clave"}</span></span>
@@ -2977,7 +3035,7 @@ function ChallengeModal({ m, st, dispatch }) {
   const [templateId,setTemplateId]=useState("");
   const today=new Date(); today.setDate(today.getDate()+7);
   const defDeadline=today.toISOString().split("T")[0];
-  const kidIds=(st.kidsOrder && st.kidsOrder.length?st.kidsOrder.filter(id=>st.kids[id]):Object.keys(st.kids||{}));
+  const kidIds=getStateKidIds(st);
   const kid1Name=kidIds[0]?st.kids[kidIds[0]]?.name||kidIds[0]:"Hijo 1";
   const kid2Name=kidIds[1]?st.kids[kidIds[1]]?.name||kidIds[1]:"Hijo 2";
 
@@ -3029,7 +3087,7 @@ function ChallengeModal({ m, st, dispatch }) {
         <label style={{fontWeight:700,fontSize:12,color:"#777",display:"block",marginBottom:4}}>📅 Fecha límite</label>
         <input type="date" value={deadline||defDeadline} onChange={e=>setDeadline(e.target.value)} style={{width:"100%",padding:"11px 14px",borderRadius:14,border:"2px solid #f0f0f0",fontSize:14}}/>
       </div>
-      <button onClick={()=>{const ids=(st.kidsOrder && st.kidsOrder.length?st.kidsOrder.filter(id=>st.kids[id]):Object.keys(st.kids||{})); dispatch({type:"ADD_CHALLENGE",challenge:{kid1:ids[0]||"",kid2:ids[1]||ids[0]||"",taskId,taskName:st.tasks.find(t=>t.id===taskId)?.name,count1:0,count2:0,deadline:deadline||defDeadline}})}}
+      <button onClick={()=>{const ids=getStateKidIds(st); dispatch({type:"ADD_CHALLENGE",challenge:{kid1:ids[0]||"",kid2:ids[1]||ids[0]||"",taskId,taskName:st.tasks.find(t=>t.id===taskId)?.name,count1:0,count2:0,deadline:deadline||defDeadline}})}}
         style={{width:"100%",background:"linear-gradient(135deg,#FF6B35,#CC4400)",color:"#fff",border:"none",borderRadius:20,padding:16,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,cursor:"pointer"}}>
         ⚔️ ¡Activar reto!
       </button>

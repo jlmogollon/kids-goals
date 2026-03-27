@@ -10,7 +10,70 @@ import {
   getStreakMult,
   isToday,
   kidName,
+  taskActiveToday,
 } from "./utils";
+
+function getIsoDateKey(offsetDays = 0) {
+  const d = new Date();
+  if (offsetDays) d.setDate(d.getDate() + offsetDays);
+  return d.toISOString().slice(0, 10);
+}
+
+function consecutiveDaysFromToday(dateSet) {
+  let streak = 0;
+  while (dateSet.has(getIsoDateKey(-streak))) {
+    streak += 1;
+  }
+  return streak;
+}
+
+function buildDerivedStats(kid, tasks, approvedCompletions) {
+  const stats = { ...(kid.stats || {}) };
+  const list = Array.isArray(approvedCompletions) ? approvedCompletions : [];
+  const today = getIsoDateKey();
+  const byTaskDates = new Map();
+  const approvedTodayTaskIds = new Set();
+  const hygieneDates = new Set();
+  const musicDates = new Set();
+
+  for (const c of list) {
+    const dateKey = (c?.date || "").slice(0, 10);
+    const taskId = Number(c?.taskId);
+    if (!dateKey || !Number.isFinite(taskId)) continue;
+
+    if (!byTaskDates.has(taskId)) byTaskDates.set(taskId, new Set());
+    byTaskDates.get(taskId).add(dateKey);
+    if (dateKey === today) approvedTodayTaskIds.add(taskId);
+
+    const task = tasks.find((t) => t.id === taskId);
+    if (task?.cat === "higiene") hygieneDates.add(dateKey);
+    if (task?.cat === "musica") musicDates.add(dateKey);
+  }
+
+  const taskStreaks = {};
+  for (const [taskId, dates] of byTaskDates.entries()) {
+    taskStreaks[taskId] = consecutiveDaysFromToday(dates);
+  }
+
+  const activeTodayTaskIds = tasks
+    .filter((t) => taskActiveToday(t.days))
+    .map((t) => t.id);
+  const allToday =
+    activeTodayTaskIds.length > 0 &&
+    activeTodayTaskIds.every((id) => approvedTodayTaskIds.has(id));
+
+  const kidForStars = { ...kid, approvedCompletions: list };
+
+  return {
+    ...stats,
+    streak: computeStreak(kidForStars),
+    hygieneStreak: consecutiveDaysFromToday(hygieneDates),
+    musicDays: musicDates.size,
+    allToday,
+    taskStreaks,
+    approvedStars: approvedStars(kidForStars, tasks),
+  };
+}
 
 export function reducer(st, a) {
   switch (a.type) {
@@ -314,9 +377,22 @@ export function reducer(st, a) {
 
     case "APPROVE_TASK": {
       const { kidId, taskId, notifId, message, approvedBy } = a;
+      const kidPrev = st.kids[kidId];
+      if (!kidPrev) return st;
+      const prevComp = kidPrev.completions?.[taskId];
+      if (!prevComp?.done) return st;
+      if (prevComp.approved) {
+        return {
+          ...st,
+          notifications: st.notifications.map((n) =>
+            n.id === notifId ? { ...n, read: true } : n,
+          ),
+          modal: null,
+        };
+      }
       const task = st.tasks.find((t) => t.id === taskId);
       const comp = {
-        ...st.kids[kidId].completions[taskId],
+        ...prevComp,
         approved: true,
         evidence: null,
         photoUrl: null,
@@ -326,7 +402,6 @@ export function reducer(st, a) {
         (task?.stars || 0) *
           (comp.mult && comp.mult > 1 ? comp.mult : 1),
       );
-      const kidPrev = st.kids[kidId];
       const dateKey = new Date().toISOString().slice(0, 10);
       const approvedCompletions = [
         ...(kidPrev.approvedCompletions || []),
@@ -339,13 +414,7 @@ export function reducer(st, a) {
           [taskId]: comp,
         },
         approvedCompletions,
-        stats: {
-          ...kidPrev.stats,
-          streak: computeStreak({
-            ...kidPrev,
-            approvedCompletions,
-          }),
-        },
+        stats: buildDerivedStats(kidPrev, st.tasks, approvedCompletions),
       };
       if (message) {
         kid = {
@@ -414,6 +483,7 @@ export function reducer(st, a) {
         ...st,
         kids: { ...st.kids, [kidId]: kid },
         notifications: newNotifs,
+        modal: null,
         confetti: true,
         approvalLog: [logEntry, ...st.approvalLog],
         toast: `⭐ +${effStars}${

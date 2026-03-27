@@ -141,7 +141,41 @@ export function balance(kid, tasks) {
 export function kidName(kid, id) {
   return kid?.name || "Niño";
 }
+export function getOrderedKidIds(kids, preferredOrder = []) {
+  const all = Object.keys(kids || {});
+  if (all.length <= 1) return all;
+
+  const pref = preferredOrder.filter((id) => all.includes(id));
+  const rest = all.filter((id) => !pref.includes(id));
+
+  // José siempre antes que David, incluso si el usuario reordenó.
+  const findByName = (name) => all.find((id) => (kids?.[id]?.name || "").trim().toLowerCase() === name);
+  const joseId = all.includes("jose") ? "jose" : findByName("josé") || findByName("jose");
+  const davidId = all.includes("david") ? "david" : findByName("david");
+
+  const ordered = [...pref, ...rest];
+  if (joseId && ordered.includes(joseId)) {
+    const withoutJose = ordered.filter((id) => id !== joseId);
+    withoutJose.unshift(joseId);
+    if (davidId && withoutJose.includes(davidId)) {
+      const withoutDavid = withoutJose.filter((id) => id !== davidId);
+      withoutDavid.splice(1, 0, davidId);
+      return withoutDavid;
+    }
+    return withoutJose;
+  }
+  if (davidId && ordered.includes(davidId)) {
+    const withoutDavid = ordered.filter((id) => id !== davidId);
+    withoutDavid.unshift(davidId);
+    return withoutDavid;
+  }
+  return ordered;
+}
+
 export function getKidColor(kidId, index) {
+  const normId = (kidId || "").toString().trim().toLowerCase();
+  if (normId === "jose") return KID_COLORS[0];
+  if (normId === "david") return KID_COLORS[1];
   return KID_COLORS[Math.abs(index ?? 0) % KID_COLORS.length];
 }
 

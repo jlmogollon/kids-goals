@@ -20,7 +20,7 @@
    ```
    VITE_FCM_VAPID_KEY=tu_clave_publica_aqui
    ```
-5. Vuelve a hacer build y a desplegar (`npm run build` y subir a Netlify).
+5. Vuelve a hacer build y despliegue en tu plataforma habitual (`npm run build` y publicar).
 
 ---
 

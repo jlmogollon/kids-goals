@@ -140,7 +140,6 @@ export const INIT_TASKS = [
   { id:15, name:"Recoger y doblar ropa",        days:"dom",  time:"Tarde",               dur:"20 min", stars:1, emoji:"🧺", cat:"hogar",      deadline:null, isSpecial:false },
   { id:16, name:"Ayudar a cocinar",             days:"finde",time:"Tarde",               dur:"30 min", stars:2, emoji:"🥘", cat:"hogar",      deadline:null, isSpecial:false },
   { id:17, name:"Actividad física",             days:"todos",time:"Tarde",               dur:"20 min", stars:2, emoji:"⚽", cat:"mente",      deadline:null, isSpecial:false },
-  { id:18, name:"Estudiar las dispensaciones",  days:"finde",time:"Tarde",               dur:"30 min", stars:3, emoji:"📜", cat:"espiritual", deadline:null, isSpecial:true },
   { id:19, name:"Memorizar un versículo",       days:"todos",time:"Noche",               dur:"10 min", stars:2, emoji:"📝", cat:"espiritual", deadline:null, isSpecial:false },
   { id:20, name:"Estudiar una parábola",        days:"lv",   time:"Tarde",               dur:"15 min", stars:2, emoji:"📚", cat:"espiritual", deadline:null, isSpecial:false },
   { id:21, name:"Orar por toda la familia (recordar nombres)", days:"dom",  time:"Mañana", dur:"10 min", stars:1, emoji:"👨‍👩‍👦", cat:"espiritual", deadline:null, isSpecial:false },
