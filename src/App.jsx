@@ -1233,12 +1233,11 @@ const ChildTienda = memo(function ChildTienda({ kidId, kid, tasks, th, dispatch,
   const [activeTab,setActiveTab]=useState("privilegios");
   const privileges = kid.privileges || [];
   const wishlist = kid.wishlist || [];
-  const avatar = kid.avatar || { items: [], equipped: null };
 
   return (
     <>
       <div style={{display:"flex",gap:8,marginBottom:12}}>
-        {[{id:"privilegios",label:"🛍️ Privilegios"},{id:"deseos",label:"🌠 Deseos"},{id:"avatar",label:"👕 Avatar"}].map(t=>(
+        {[{id:"privilegios",label:"🛍️ Privilegios"},{id:"deseos",label:"🌠 Deseos"}].map(t=>(
           <button key={t.id} onClick={()=>setActiveTab(t.id)}
             style={{flex:1,borderRadius:50,padding:"8px",border:"none",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:13,background:activeTab===t.id?th.p:"#f0f0f0",color:activeTab===t.id?"#fff":"#888",transition:"all .2s"}}>
             {t.label}
@@ -1254,7 +1253,6 @@ const ChildTienda = memo(function ChildTienda({ kidId, kid, tasks, th, dispatch,
         <div style={{fontSize:11,color:"#555",fontWeight:600}}>
           En <strong>Privilegios</strong> las estrellas se <strong>gastan</strong> para cosas como pantalla extra o elegir la cena.
           En <strong>Deseos</strong> escribes metas grandes (por ejemplo un libro, una excursión o un curso); papá/mamá las aprueban, pero no gastan estrellas.
-          En <strong>Avatar</strong> puedes cambiar tu aspecto desbloqueando accesorios divertidos con estrellas.
         </div>
       </div>
 
@@ -1309,59 +1307,6 @@ const ChildTienda = memo(function ChildTienda({ kidId, kid, tasks, th, dispatch,
         </>
       )}
 
-      {activeTab==="avatar"&&(
-        <>
-          <div className="card" style={{marginBottom:12,border:`2px solid ${th.p}44`,background:`${th.p}10`}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <Avatar photo={kid.photo} emoji="👦" size={52} color={th.p}/>
-              <div>
-                <div style={{fontWeight:900,fontSize:14,color:"#222"}}>Tu estilo</div>
-                <div style={{fontSize:11,color:"#555",marginTop:2}}>
-                  Desbloquea gorros, fondos y más con tus ⭐.
-                </div>
-                {avatar.equipped && (
-                  <div style={{marginTop:4,fontSize:11,fontWeight:800,color:th.a}}>
-                    Accesorio activo: {AVATAR_ITEMS.find(i=>i.id===avatar.equipped)?.name || "Ninguno"}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            {AVATAR_ITEMS.map(item=>{
-              const owned = avatar.items.includes(item.id);
-              const canAfford = avail >= item.cost;
-              const equipped = avatar.equipped === item.id;
-              return (
-                <div key={item.id} className="card" style={{textAlign:"center",padding:12,border:equipped?`2.5px solid ${th.p}99`:owned?`2px solid ${th.p}55`:"2px solid #f0f0f0",background:equipped?`${th.p}18`:owned?`${th.p}08`:"#fff",opacity:!owned && !canAfford ? 0.6 : 1}}>
-                  <div style={{fontSize:32,marginBottom:4}}>{item.emoji}</div>
-                  <div style={{fontWeight:900,fontSize:12,color:"#222"}}>{item.name}</div>
-                  <div style={{fontSize:10,color:"#888",margin:"3px 0 6px"}}>Ranura: {item.slot}</div>
-                  <div style={{fontWeight:900,color:"#CC8800",fontSize:13,marginBottom:6}}>{item.cost} ⭐</div>
-                  {owned ? (
-                    <button
-                      onClick={()=>!equipped && dispatch({type:"EQUIP_AVATAR_ITEM",kidId,itemId:item.id})}
-                      disabled={equipped}
-                      style={{width:"100%",background:equipped?"#e0e0e0":`linear-gradient(135deg,${th.p},${th.a})`,color:equipped?"#999":"#fff",border:"none",borderRadius:12,padding:"8px",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:13,cursor:equipped?"default":"pointer"}}
-                    >
-                      {equipped ? "Equipado" : "Usar"}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={()=>dispatch({type:"REDEEM_AVATAR_ITEM",kidId,itemId:item.id})}
-                      disabled={!canAfford}
-                      style={{width:"100%",background:canAfford?`linear-gradient(135deg,${th.p},${th.a})`:"#f0f0f0",color:canAfford?"#fff":"#aaa",border:"none",borderRadius:12,padding:"8px",fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:13,cursor:canAfford?"pointer":"not-allowed"}}
-                    >
-                      {canAfford ? "Desbloquear" : `Faltan ${item.cost-avail}⭐`}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
     </>
   );
 });
@@ -2064,6 +2009,7 @@ const ParentNotifs = memo(function ParentNotifs({ st, dispatch, parentRole }) {
 
       {visibleTaskNotifs.map(n=>{
         const k=st.kids[n.kidId];
+        if (!k) return null;
         const task=st.tasks.find(t=>t.id===n.taskId);
         const comp=k.completions[n.taskId];
         const kth=getKidColor(n.kidId,0);
