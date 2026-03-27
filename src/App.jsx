@@ -679,7 +679,7 @@ function WhoIsUsingScreen({ st, dispatch, roleData }) {
 // ═══════════════════════════════════════════════════════════════════════
 // CHILD SCREEN
 // ═══════════════════════════════════════════════════════════════════════
-function SwipeRefresh({ onRefresh, children }) {
+function useSwipeRefresh(onRefresh) {
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const startY = useRef(null);
@@ -728,22 +728,16 @@ function SwipeRefresh({ onRefresh, children }) {
   };
 
   const pct = Math.min(100, Math.round((pull / 60) * 100));
+  const indicator = (pull > 12 && !refreshing)
+    ? <div style={{width:"100%",textAlign:"center",fontSize:12,fontWeight:900,color:"#4A7A1E",padding:"4px 0 8px"}}>↻ Soltar para actualizar ({pct}%)</div>
+    : refreshing
+    ? <div style={{width:"100%",textAlign:"center",fontSize:12,fontWeight:900,color:"#888",padding:"4px 0 8px"}}>Actualizando…</div>
+    : null;
 
-  return (
-    <div onTouchStart={handleStart} onTouchMove={handleMove} onTouchEnd={handleEnd} style={{ width: "100%" }}>
-      {pull > 12 && !refreshing && (
-        <div style={{ width: "100%", textAlign: "center", fontSize: 12, fontWeight: 900, color: "#4A7A1E", marginBottom: 6 }}>
-          ↻ Soltar para actualizar ({pct}%)
-        </div>
-      )}
-      {refreshing && (
-        <div style={{ width: "100%", textAlign: "center", fontSize: 12, fontWeight: 900, color: "#888", marginBottom: 6 }}>
-          Actualizando…
-        </div>
-      )}
-      {children}
-    </div>
-  );
+  return {
+    touchHandlers: { onTouchStart: handleStart, onTouchMove: handleMove, onTouchEnd: handleEnd },
+    indicator,
+  };
 }
 
 function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, onSwitchRole, onSwipeRefresh }) {
@@ -777,8 +771,9 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
     {id:"mas",icon:"➕",label:"Más",badge:unreadMsgs},
   ];
 
+  const { touchHandlers, indicator } = useSwipeRefresh(onSwipeRefresh);
   return (
-    <div className="screen" style={{background:th.l}}>
+    <div className="screen" style={{background:th.l}} {...touchHandlers}>
       {/* Header */}
       <div className="screen-header" style={{background:`linear-gradient(135deg,${th.p},${th.a})`,position:"relative",borderRadius:"0 0 28px 28px"}}>
         {onSwitchRole&&<button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"exitMenu"}})} className="logout-btn" title="Salir / cambiar de rol">🚪</button>}
@@ -824,8 +819,8 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
       </div>
 
       {/* Scrollable content */}
-      <SwipeRefresh onRefresh={onSwipeRefresh}>
-        <div className="scroll-body">
+      <div className="scroll-body">
+        {indicator}
         {showNotifPrompt&&onRequestNotif&&(
           <button onClick={onRequestNotif} style={{width:"100%",background:`linear-gradient(135deg,${th.p},${th.a})`,color:"#fff",border:"none",borderRadius:16,padding:14,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,cursor:"pointer",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
             🔔 Activar notificaciones — recibirás avisos cuando papá/mamá apruebe tus tareas
@@ -848,8 +843,7 @@ function ChildScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData, 
         )}
         {st.childTab==="logros"    && <ChildLogros kid={kid} kidId={kidId} as={as} th={th} achievOverrides={st.achievOverrides}/>}
         {st.childTab==="mas"       && <ChildMas kidId={kidId} kid={kid} st={st} th={th} dispatch={dispatch} challenges={st.challenges||[]}/>}
-        </div>
-      </SwipeRefresh>
+      </div>
 
       <div className="tab-bar">
         {tabs.map(t=>(
@@ -1582,8 +1576,9 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
     ? st.kidsOrder.filter(id=>st.kids[id])
     : Object.keys(st.kids||{}));
 
+  const { touchHandlers, indicator } = useSwipeRefresh(onSwipeRefresh);
   return (
-    <div className="screen" style={{background:th.l}}>
+    <div className="screen" style={{background:th.l}} {...touchHandlers}>
       {/* Header */}
       <div className="screen-header" style={{background:`linear-gradient(135deg,${th.a},${th.d})`,position:"relative",borderRadius:"0 0 28px 28px"}}>
         {onSwitchRole&&<button onClick={()=>dispatch({type:"OPEN_MODAL",modal:{type:"exitMenu"}})} className="logout-btn" title="Salir / cambiar de rol">🚪</button>}
@@ -1624,8 +1619,8 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
       </div>
 
       {/* Scrollable content */}
-      <SwipeRefresh onRefresh={onSwipeRefresh}>
-        <div className="scroll-body">
+      <div className="scroll-body">
+        {indicator}
         {showNotifPrompt&&onRequestNotif&&(
           <button onClick={onRequestNotif} style={{width:"100%",background:"linear-gradient(135deg,#4A7A1E,#2D5010)",color:"#fff",border:"none",borderRadius:16,padding:14,fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:14,cursor:"pointer",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
             🔔 Activar notificaciones — recibirás avisos cuando los niños completen tareas
@@ -1662,8 +1657,7 @@ function ParentScreen({ st, dispatch, onRequestNotif, showNotifPrompt, roleData,
             <ParentHistory st={st}/>
           </>
         )}
-        </div>
-      </SwipeRefresh>
+      </div>
 
       <div className="tab-bar">
         {tabs.map(t=>(
