@@ -61,6 +61,7 @@ body {
   width: 100%;
   overflow-y: auto;
   overflow-x: hidden;
+  touch-action: pan-y;
 }
 
 a {
@@ -101,6 +102,7 @@ button:focus-visible {
   flex-direction:column;
   width:100%;
   min-height:100dvh;
+  touch-action: pan-y;
 }
 
 .scroll-body{

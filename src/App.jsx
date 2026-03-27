@@ -608,6 +608,8 @@ function WhoIsUsingScreen({ st, dispatch, roleData }) {
 
   useEffect(() => {
     if (!members.length || selected || pinStep) return;
+    // Si actingAs es null, el usuario pulsó "cambiar de rol" y debe elegir manualmente.
+    if (st.actingAs === null) return;
     try {
       const raw = localStorage.getItem(lastRoleKey);
       if (!raw) return;
@@ -622,7 +624,7 @@ function WhoIsUsingScreen({ st, dispatch, roleData }) {
       if (rolePins[roleKey] && !isPinTrusted(roleKey)) return;
       goToRole(target);
     } catch {}
-  }, [members.length, rolePins, pinStep, selected]);
+  }, [members.length, rolePins, pinStep, selected, st.actingAs]);
 
   if (members.length === 0) {
     const isP = st.loggedAccount?.role==="father"||st.loggedAccount?.role==="mother";
@@ -743,8 +745,11 @@ function useSwipeRefresh(onRefresh) {
 
   function isAtTop() {
     if (typeof window === "undefined") return true;
-    const y = window.scrollY ?? document.documentElement?.scrollTop ?? 0;
-    return y <= 0;
+    const rootY = document.getElementById("root")?.scrollTop ?? 0;
+    const docY = document.documentElement?.scrollTop ?? 0;
+    const bodyY = document.body?.scrollTop ?? 0;
+    const winY = window.scrollY ?? 0;
+    return Math.max(rootY, docY, bodyY, winY) <= 0;
   }
 
   const handleStart = (e) => {
@@ -763,6 +768,9 @@ function useSwipeRefresh(onRefresh) {
     if (typeof y !== "number") return;
     const diff = y - startY.current;
     if (diff <= 0) return;
+    if (!isAtTop()) return;
+    // En iOS/PWA evita que el navegador consuma el gesto y permite nuestro refresh.
+    if (typeof e?.preventDefault === "function") e.preventDefault();
     setPull(Math.min(diff, 90));
   };
 
