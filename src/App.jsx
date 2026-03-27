@@ -1499,6 +1499,8 @@ function KidHistory({ kid, th, filter="all", month }) {
                     {it.type==="wishDenied"&&"❌"}
                     {it.type==="gratitude"&&"📝"}
                     {it.type==="message"&&"💬"}
+                    {it.type==="dailyFlash"&&"🎲"}
+                    {it.type==="avatarItem"&&"👕"}
                   </div>
                   <div style={{flex:1}}>
                     <div style={{fontWeight:700,color:"#333"}}>
@@ -1511,6 +1513,8 @@ function KidHistory({ kid, th, filter="all", month }) {
                       {it.type==="wishDenied" && <>Deseo denegado: {it.name}</>}
                       {it.type==="gratitude" && <>Gratitud guardada</>}
                       {it.type==="message"   && <>Mensaje de papá/mamá</>}
+                      {it.type==="dailyFlash" && <>Reto flash completado: {it.text} (+{it.stars}⭐)</>}
+                      {it.type==="avatarItem" && <>Accesorio desbloqueado: {it.name} ({it.cost}⭐)</>}
                     </div>
                     <div style={{fontSize:11,color:"#999",fontWeight:600}}>{it.time}</div>
                     {it.type==="gratitude" && <div style={{fontSize:11,color:"#555",marginTop:2}}>{it.text}</div>}
@@ -3033,6 +3037,9 @@ function ChallengeModal({ m, st, dispatch }) {
   const [templateId,setTemplateId]=useState("");
   const today=new Date(); today.setDate(today.getDate()+7);
   const defDeadline=today.toISOString().split("T")[0];
+  const kidIds=(st.kidsOrder && st.kidsOrder.length?st.kidsOrder.filter(id=>st.kids[id]):Object.keys(st.kids||{}));
+  const kid1Name=kidIds[0]?st.kids[kidIds[0]]?.name||kidIds[0]:"Hijo 1";
+  const kid2Name=kidIds[1]?st.kids[kidIds[1]]?.name||kidIds[1]:"Hijo 2";
 
   const handleTemplateChange=(e)=>{
     const tid=e.target.value;
@@ -3053,7 +3060,7 @@ function ChallengeModal({ m, st, dispatch }) {
   return (
     <>
       <h2 style={{fontWeight:900,marginBottom:8}}>⚔️ Crear reto entre hermanos</h2>
-      <p style={{color:"#888",fontSize:13,fontWeight:600,marginBottom:16}}>José vs David — ¿quién completa más veces esta tarea?</p>
+      <p style={{color:"#888",fontSize:13,fontWeight:600,marginBottom:16}}>{kid1Name} vs {kid2Name} — ¿quién completa más veces esta tarea?</p>
 
       {DEFAULT_CHALLENGES.length>0 && (
         <div style={{marginBottom:12}}>
@@ -3098,12 +3105,26 @@ function debounce(fn, ms) {
   let t; return (...args) => { clearTimeout(t); t = setTimeout(()=>fn(...args), ms); };
 }
 
+const CONFETTI_MESSAGES = [
+  "Eres un campeón de la organización.",
+  "Gran trabajo, tu esfuerzo se nota.",
+  "¡Sigue así, estás construyendo un gran hábito!",
+  "Tus papás están muy orgullosos de ti.",
+  "Cada día mejoras un poco más.",
+  "Tu disciplina te está llevando muy lejos.",
+  "Lo que haces hoy construye tu futuro.",
+  "Tu esfuerzo habla más fuerte que tus palabras.",
+  "Da gusto ver cómo cumples tus responsabilidades.",
+  "Tu constancia es tu súperpoder.",
+];
+
 export default function App() {
   const [st, rawDispatch] = useState(() => initState());
   const [authUser, setAuthUser] = useState(undefined); // undefined=loading, null=logged out
   const [roleData, setRoleData] = useState(null);
   const [appLoading, setAppLoading] = useState(true);
   const fcmSwReg = useRef(null);
+  const onMessageUnsub = useRef(null);
 
   const familyId = roleData?.familyId || st?.loggedAccount?.familyId;
   const dispatch = useCallback((action) => {
@@ -3355,7 +3376,8 @@ export default function App() {
       await setParentFcmToken(familyId, parentRoleForFcm, token);
       rawDispatch(prev => ({ ...prev, parentFcmTokens: { ...(prev.parentFcmTokens||{}), [parentRoleForFcm]: token } }));
       dispatch({ type: "TOAST", msg: "🔔 Notificaciones activadas" });
-      onMessage(messaging, (payload) => {
+      if (onMessageUnsub.current) onMessageUnsub.current();
+      onMessageUnsub.current = onMessage(messaging, (payload) => {
         if (payload?.notification?.title) dispatch({ type: "TOAST", msg: payload.notification.title + (payload.notification.body ? " — " + payload.notification.body : "") });
       });
     } catch (e) {
@@ -3387,6 +3409,8 @@ export default function App() {
 
   useEffect(()=>{ if(st.toast){ const t=setTimeout(()=>dispatch({type:"CLEAR_TOAST"}),3500); return()=>clearTimeout(t); } },[st.toast]);
   useEffect(()=>{ if(st.confetti){ const t=setTimeout(()=>dispatch({type:"CLEAR_CONFETTI"}),2800); return()=>clearTimeout(t); } },[st.confetti]);
+
+  const confettiMsg = useMemo(() => CONFETTI_MESSAGES[Math.floor(Math.random() * CONFETTI_MESSAGES.length)], [st.confetti]);
 
   // Loading spinner
   if (appLoading || authUser === undefined) {
@@ -3518,33 +3542,16 @@ export default function App() {
                 >
                   ¡Súper misión completada!
                 </div>
-                {(() => {
-                  const messages = [
-                    "Eres un campeón de la organización.",
-                    "Gran trabajo, tu esfuerzo se nota.",
-                    "¡Sigue así, estás construyendo un gran hábito!",
-                    "Tus papás están muy orgullosos de ti.",
-                    "Cada día mejoras un poco más.",
-                    "Tu disciplina te está llevando muy lejos.",
-                    "Lo que haces hoy construye tu futuro.",
-                    "Tu esfuerzo habla más fuerte que tus palabras.",
-                    "Da gusto ver cómo cumples tus responsabilidades.",
-                    "Tu constancia es tu súperpoder.",
-                  ];
-                  const idx = Math.floor(Math.random() * messages.length);
-                  return (
-                    <div
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: "#555",
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      {messages[idx]}
-                    </div>
-                  );
-                })()}
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#555",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {confettiMsg}
+                </div>
               </div>
             </div>
           </div>

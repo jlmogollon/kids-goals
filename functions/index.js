@@ -3,14 +3,17 @@
  * Cuando el padre aprueba o rechaza una tarea → push al niño.
  */
 import { initializeApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 import { onDocumentUpdated } from "firebase-functions/v2/firestore";
 
 initializeApp();
 
-const db = getFirestore();
 const kidNames = { jose: "José", david: "David" };
+
+function mapNotificationIds(list) {
+  if (!Array.isArray(list)) return new Set();
+  return new Set(list.map((n) => String(n?.id)).filter(Boolean));
+}
 
 function getTaskName(tasks, taskId) {
   const task = Array.isArray(tasks) ? tasks.find((t) => t.id === taskId) : null;
@@ -27,6 +30,7 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
     const before = change.before?.data();
     if (!after || !before) return;
 
+    const familyId = change.after?.ref?.id;
     const tasks = Array.isArray(after.tasks) ? after.tasks : [];
     const kids = after.kids || {};
     const messaging = getMessaging();
@@ -36,9 +40,9 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
     const tokensToNotify = [parentTokens.father, parentTokens.mother].filter(Boolean);
     if (after.parentFcmToken && !tokensToNotify.length) tokensToNotify.push(after.parentFcmToken); // retrocompat
     const notifs = Array.isArray(after.notifications) ? after.notifications : [];
-    const prevCount = Array.isArray(before.notifications) ? before.notifications.length : 0;
-    if (tokensToNotify.length > 0 && notifs.length > prevCount) {
-      const latest = notifs[0];
+    const beforeIds = mapNotificationIds(before.notifications);
+    const latest = notifs.find((n) => !beforeIds.has(String(n?.id))) || null;
+    if (tokensToNotify.length > 0 && latest) {
       const kidName = latest?.kidId ? (kids[latest.kidId]?.name || kidNames[latest.kidId] || "Tu hijo") : "Tu hijo";
       const taskName = getTaskName(tasks, latest?.taskId);
       const title = "Kids Goals";
@@ -51,7 +55,16 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
           await messaging.send({
             token,
             notification: { title, body },
-            webpush: { notification: { title, body, icon: "/icons/icon-192x192.png" } },
+            data: {
+              type: latest?.type || "task",
+              familyId: familyId || "",
+              kidId: latest?.kidId || "",
+              taskId: String(latest?.taskId ?? ""),
+            },
+            webpush: {
+              notification: { title, body, icon: "/icons/icon-192x192.png" },
+              fcmOptions: { link: "/" },
+            },
           });
         } catch (err) {
           console.warn("FCM parent:", err?.message);
@@ -60,8 +73,7 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
     }
 
     // ── 2) Push al NIÑO cuando el padre aprueba o rechaza una tarea ──
-    const fcmSnap = await db.doc("appData/fcmTokens").get();
-    const childTokens = fcmSnap.exists ? fcmSnap.data() : {};
+    const childTokens = after.childFcmTokens || {};
     if (Object.keys(childTokens).length === 0) return;
 
     const beforeKids = before.kids || {};
@@ -86,7 +98,16 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
           await messaging.send({
             token,
             notification: { title, body },
-            webpush: { notification: { title, body, icon: "/icons/icon-192x192.png" } },
+            data: {
+              type: "taskApproved",
+              familyId: familyId || "",
+              kidId,
+              taskId: String(taskIdStr),
+            },
+            webpush: {
+              notification: { title, body, icon: "/icons/icon-192x192.png" },
+              fcmOptions: { link: "/" },
+            },
           });
         } catch (err) {
           console.warn("FCM child approve:", err?.message);
@@ -104,7 +125,16 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
           await messaging.send({
             token,
             notification: { title, body },
-            webpush: { notification: { title, body, icon: "/icons/icon-192x192.png" } },
+            data: {
+              type: "taskRejected",
+              familyId: familyId || "",
+              kidId,
+              taskId: String(taskIdStr),
+            },
+            webpush: {
+              notification: { title, body, icon: "/icons/icon-192x192.png" },
+              fcmOptions: { link: "/" },
+            },
           });
         } catch (err) {
           console.warn("FCM child reject:", err?.message);
@@ -121,7 +151,15 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
           await messaging.send({
             token,
             notification: { title, body },
-            webpush: { notification: { title, body, icon: "/icons/icon-192x192.png" } },
+            data: {
+              type: "message",
+              familyId: familyId || "",
+              kidId,
+            },
+            webpush: {
+              notification: { title, body, icon: "/icons/icon-192x192.png" },
+              fcmOptions: { link: "/" },
+            },
           });
         } catch (err) {
           console.warn("FCM child message:", err?.message);

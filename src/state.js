@@ -37,6 +37,20 @@ export function reducer(st, a) {
       return { ...st, onboardingStep: a.step };
     case "ONBOARDING_FINISH":
       return { ...a.state };
+    case "LINK_ACCOUNT_DONE": {
+      const base = a.saved ? a.saved : {};
+      return {
+        ...st,
+        ...base,
+        screen: "whoIsUsing",
+        loggedAccount: a.linkData,
+        actingAs:
+          a.linkData.role === "father" || a.linkData.role === "mother"
+            ? { role: a.linkData.role }
+            : { role: "child", kidId: a.linkData.kidId },
+        activeKid: a.linkData.kidId || null,
+      };
+    }
     case "SET_ACTING_AS":
       return {
         ...st,
