@@ -1,6 +1,18 @@
 /**
- * Cloud Function: cuando un niño registra algo → push al padre.
- * Cuando el padre aprueba o rechaza una tarea → push al niño.
+ * Cloud Functions: notificaciones push end-to-end
+ * 
+ * Eventos para PADRES:
+ * - Cuando un niño completa una tarea (ya le llegó una notificación)
+ * - Cuando un niño canjea un privilegio
+ * 
+ * Eventos para NIÑOS:
+ * - Cuando se aprueba una tarea
+ * - Cuando se rechaza una tarea
+ * - Cuando se asigna una tarea nueva
+ * - Cuando se asigna un reto
+ * - Cuando se aprueba un reto
+ * - Cuando reciben un mensaje de los padres
+ * - Cuando reciben un privilegio nuevo
  */
 import { initializeApp } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
@@ -20,6 +32,15 @@ function getTaskName(tasks, taskId) {
   return task?.name || "una tarea";
 }
 
+function buildChallengeKey(kidId, challengeId) {
+  return `${kidId}:${challengeId}`;
+}
+
+function getChallengeTitle(challenges, challengeId) {
+  const ch = Array.isArray(challenges) ? challenges.find((c) => c.id === challengeId) : null;
+  return ch?.title || "un reto";
+}
+
 export const notifyParentOnNewNotification = onDocumentUpdated(
   {
     document: "appData/main",
@@ -32,34 +53,44 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
 
     const familyId = change.after?.ref?.id;
     const tasks = Array.isArray(after.tasks) ? after.tasks : [];
+    const challenges = Array.isArray(after.challenges) ? after.challenges : [];
     const kids = after.kids || {};
     const messaging = getMessaging();
 
-    // ── 1) Push a AMBOS PADRES cuando hay nueva notificación (niño completó algo) ──
     const parentTokens = after.parentFcmTokens || {};
-    const tokensToNotify = [parentTokens.father, parentTokens.mother].filter(Boolean);
-    if (after.parentFcmToken && !tokensToNotify.length) tokensToNotify.push(after.parentFcmToken); // retrocompat
+    const parentTokensList = [parentTokens.father, parentTokens.mother].filter(Boolean);
+    if (after.parentFcmToken && !parentTokensList.length) parentTokensList.push(after.parentFcmToken); // retrocompat
+
+    const childTokens = after.childFcmTokens || {};
+    const beforeKids = before.kids || {};
+    const afterKids = after.kids || {};
+
+    // ══════════════════════════════════════════════════════════════
+    // NOTIFICACIONES PARA PADRES
+    // ══════════════════════════════════════════════════════════════
+
+    // 1️⃣ PADRE: Cuando un niño completa una tarea o canjea un privilegio
     const notifs = Array.isArray(after.notifications) ? after.notifications : [];
     const beforeIds = mapNotificationIds(before.notifications);
-    const latest = notifs.find((n) => !beforeIds.has(String(n?.id))) || null;
-    if (tokensToNotify.length > 0 && latest) {
-      const kidName = latest?.kidId ? (kids[latest.kidId]?.name || kidNames[latest.kidId] || "Tu hijo") : "Tu hijo";
-      const taskName = getTaskName(tasks, latest?.taskId);
+    const latestNotif = notifs.find((n) => !beforeIds.has(String(n?.id))) || null;
+    if (parentTokensList.length > 0 && latestNotif) {
+      const kidName = latestNotif?.kidId ? (kids[latestNotif.kidId]?.name || kidNames[latestNotif.kidId] || "Tu hijo") : "Tu hijo";
+      const taskName = getTaskName(tasks, latestNotif?.taskId);
       const title = "Kids Goals";
       const body =
-        latest?.type === "privilege"
-          ? `${kidName} ha canjeado un privilegio`
-          : `${kidName} ha completado: ${taskName}. Ábrela para aprobar.`;
-      for (const token of tokensToNotify) {
+        latestNotif?.type === "privilege"
+          ? `🎁 ${kidName} ha canjeado un privilegio`
+          : `✅ ${kidName} ha completado: ${taskName}. Ábrela para aprobar.`;
+      for (const token of parentTokensList) {
         try {
           await messaging.send({
             token,
             notification: { title, body },
             data: {
-              type: latest?.type || "task",
+              type: latestNotif?.type || "task",
               familyId: familyId || "",
-              kidId: latest?.kidId || "",
-              taskId: String(latest?.taskId ?? ""),
+              kidId: latestNotif?.kidId || "",
+              taskId: String(latestNotif?.taskId ?? ""),
             },
             webpush: {
               notification: { title, body, icon: "/icons/icon-192x192.png" },
@@ -67,17 +98,17 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
             },
           });
         } catch (err) {
-          console.warn("FCM parent:", err?.message);
+          console.warn("FCM parent notification:", err?.message);
         }
       }
     }
 
-    // ── 2) Push al NIÑO cuando el padre aprueba o rechaza una tarea ──
-    const childTokens = after.childFcmTokens || {};
+    // ══════════════════════════════════════════════════════════════
+    // NOTIFICACIONES PARA NIÑOS
+    // ══════════════════════════════════════════════════════════════
+
     if (Object.keys(childTokens).length === 0) return;
 
-    const beforeKids = before.kids || {};
-    const afterKids = after.kids || {};
     for (const kidId of ["jose", "david"]) {
       const token = childTokens[kidId];
       if (!token) continue;
@@ -85,11 +116,11 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
       const aCompletions = afterKids[kidId]?.completions || {};
       const kidName = kidNames[kidId];
 
-      // Aprobación: en after hay approved: true y en before no
+      // 2️⃣ NIÑO: Cuando se aprueba una tarea
       for (const [taskIdStr, aComp] of Object.entries(aCompletions)) {
         if (!aComp.approved) continue;
         const bComp = bCompletions[taskIdStr];
-        if (bComp?.approved) continue;
+        if (bComp?.approved) continue; // Ya fue aprobada antes
         const taskName = getTaskName(tasks, parseInt(taskIdStr, 10));
         const who = aComp.approvedBy === "mother" ? "Mamá" : "Papá";
         const title = "Kids Goals";
@@ -110,14 +141,14 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
             },
           });
         } catch (err) {
-          console.warn("FCM child approve:", err?.message);
+          console.warn("FCM child taskApproved:", err?.message);
         }
       }
 
-      // Rechazo: en before había completion con done y no aprobada; en after ya no está
+      // 3️⃣ NIÑO: Cuando se rechaza una tarea (se borra la completion)
       for (const [taskIdStr, bComp] of Object.entries(bCompletions)) {
-        if (!bComp.done || bComp.approved) continue;
-        if (taskIdStr in aCompletions) continue;
+        if (bComp.approved) continue; // No enviar si ya estaba aprobada
+        if (taskIdStr in aCompletions) continue; // Aún existe
         const taskName = getTaskName(tasks, parseInt(taskIdStr, 10));
         const title = "Kids Goals";
         const body = `Tu tarea "${taskName}" fue rechazada. Puedes volver a intentarlo.`;
@@ -137,16 +168,17 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
             },
           });
         } catch (err) {
-          console.warn("FCM child reject:", err?.message);
+          console.warn("FCM child taskRejected:", err?.message);
         }
       }
 
-      // Nuevo mensaje (papá/mamá o motivo de rechazo): push al niño
+      // 4️⃣ NIÑO: Cuando recibe un mensaje de los padres
       const bMsgs = beforeKids[kidId]?.messages || [];
       const aMsgs = afterKids[kidId]?.messages || [];
       if (aMsgs.length > bMsgs.length && aMsgs[0]?.text) {
         const title = "Kids Goals";
-        const body = aMsgs[0].text.length > 80 ? aMsgs[0].text.slice(0, 77) + "…" : aMsgs[0].text;
+        const msgText = aMsgs[0].text;
+        const body = msgText.length > 80 ? msgText.slice(0, 77) + "…" : msgText;
         try {
           await messaging.send({
             token,
@@ -163,6 +195,120 @@ export const notifyParentOnNewNotification = onDocumentUpdated(
           });
         } catch (err) {
           console.warn("FCM child message:", err?.message);
+        }
+      }
+
+      // 5️⃣ NIÑO: Cuando se asigna una tarea nueva
+      const bTaskIds = new Set(Object.keys(bCompletions));
+      const aTaskIds = new Set(Object.keys(aCompletions));
+      for (const taskIdStr of aTaskIds) {
+        if (bTaskIds.has(taskIdStr)) continue; // Tarea no es nueva
+        const taskId = parseInt(taskIdStr, 10);
+        const taskName = getTaskName(tasks, taskId);
+        const title = "Kids Goals";
+        const body = `📝 Nueva tarea asignada: ${taskName}`;
+        try {
+          await messaging.send({
+            token,
+            notification: { title, body },
+            data: {
+              type: "newTask",
+              familyId: familyId || "",
+              kidId,
+              taskId: String(taskId),
+            },
+            webpush: {
+              notification: { title, body, icon: "/icons/icon-192x192.png" },
+              fcmOptions: { link: "/" },
+            },
+          });
+        } catch (err) {
+          console.warn("FCM child newTask:", err?.message);
+        }
+      }
+
+      // 6️⃣ NIÑO: Cuando se asigna un reto
+      const bChallenges = beforeKids[kidId]?.challenges || {};
+      const aChallenges = afterKids[kidId]?.challenges || {};
+      for (const [chalIdStr, aChallenge] of Object.entries(aChallenges)) {
+        const bChallenge = bChallenges[chalIdStr];
+        if (bChallenge) continue; // Reto no es nuevo
+        const challengeTitle = getChallengeTitle(challenges, parseInt(chalIdStr, 10));
+        const title = "Kids Goals";
+        const body = `🎯 Nuevo reto: ${challengeTitle}`;
+        try {
+          await messaging.send({
+            token,
+            notification: { title, body },
+            data: {
+              type: "newChallenge",
+              familyId: familyId || "",
+              kidId,
+              challengeId: String(chalIdStr),
+            },
+            webpush: {
+              notification: { title, body, icon: "/icons/icon-192x192.png" },
+              fcmOptions: { link: "/" },
+            },
+          });
+        } catch (err) {
+          console.warn("FCM child newChallenge:", err?.message);
+        }
+      }
+
+      // 7️⃣ NIÑO: Cuando se aprueba un reto
+      for (const [chalIdStr, aChallenge] of Object.entries(aChallenges)) {
+        if (!aChallenge.approved) continue;
+        const bChallenge = bChallenges[chalIdStr];
+        if (bChallenge?.approved) continue; // Ya estaba aprobado
+        const challengeTitle = getChallengeTitle(challenges, parseInt(chalIdStr, 10));
+        const title = "Kids Goals";
+        const body = `¡Reto aprobado: ${challengeTitle}! ⭐`;
+        try {
+          await messaging.send({
+            token,
+            notification: { title, body },
+            data: {
+              type: "challengeApproved",
+              familyId: familyId || "",
+              kidId,
+              challengeId: String(chalIdStr),
+            },
+            webpush: {
+              notification: { title, body, icon: "/icons/icon-192x192.png" },
+              fcmOptions: { link: "/" },
+            },
+          });
+        } catch (err) {
+          console.warn("FCM child challengeApproved:", err?.message);
+        }
+      }
+
+      // 8️⃣ NIÑO: Cuando recibe un privilegio nuevo
+      const bPrivileges = beforeKids[kidId]?.privileges || [];
+      const aPrivileges = afterKids[kidId]?.privileges || [];
+      if (aPrivileges.length > bPrivileges.length) {
+        const newPriv = aPrivileges[aPrivileges.length - 1];
+        if (newPriv?.name) {
+          const title = "Kids Goals";
+          const body = `🎁 Has ganado un privilegio: ${newPriv.name}`;
+          try {
+            await messaging.send({
+              token,
+              notification: { title, body },
+              data: {
+                type: "newPrivilege",
+                familyId: familyId || "",
+                kidId,
+              },
+              webpush: {
+                notification: { title, body, icon: "/icons/icon-192x192.png" },
+                fcmOptions: { link: "/" },
+              },
+            });
+          } catch (err) {
+            console.warn("FCM child newPrivilege:", err?.message);
+          }
         }
       }
     }
