@@ -3133,6 +3133,7 @@ export default function App() {
   const [appLoading, setAppLoading] = useState(true);
   const fcmSwReg = useRef(null);
   const onMessageUnsub = useRef(null);
+  const autoRegisteredPushKey = useRef("");
 
   const familyId = roleData?.familyId || st?.loggedAccount?.familyId;
   const dispatch = useCallback((action) => {
@@ -3414,6 +3415,31 @@ export default function App() {
       if (e?.code !== "messaging/permission-blocked") console.warn("FCM child:", e?.message || e);
     }
   }, [childKidId]);
+
+  useEffect(() => {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    if (!authUser || !familyId) return;
+
+    const currentRoleKey = st.actingAs?.role === "child"
+      ? `child:${childKidId || ""}`
+      : st.actingAs?.role === "father" || st.actingAs?.role === "mother"
+      ? `parent:${parentRoleForFcm}`
+      : "";
+
+    if (!currentRoleKey) return;
+
+    const registrationKey = `${familyId}:${currentRoleKey}`;
+    if (autoRegisteredPushKey.current === registrationKey) return;
+    autoRegisteredPushKey.current = registrationKey;
+
+    if (st.actingAs?.role === "child" && childKidId) {
+      requestChildNotif();
+      return;
+    }
+    if (st.actingAs?.role === "father" || st.actingAs?.role === "mother") {
+      requestParentNotif();
+    }
+  }, [authUser, childKidId, familyId, parentRoleForFcm, requestChildNotif, requestParentNotif, st.actingAs?.role]);
 
   useEffect(()=>{ if(st.toast){ const t=setTimeout(()=>dispatch({type:"CLEAR_TOAST"}),3500); return()=>clearTimeout(t); } },[st.toast]);
   useEffect(()=>{ if(st.confetti){ const t=setTimeout(()=>dispatch({type:"CLEAR_CONFETTI"}),2800); return()=>clearTimeout(t); } },[st.confetti]);

@@ -13,6 +13,14 @@ import {
   taskActiveToday,
 } from "./utils";
 
+let localIdCounter = 0;
+
+function makeLocalId(prefix = "id") {
+  localIdCounter = (localIdCounter + 1) % 1000000;
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${prefix}_${Date.now()}_${localIdCounter}_${rand}`;
+}
+
 function getIsoDateKey(offsetDays = 0) {
   const d = new Date();
   if (offsetDays) d.setDate(d.getDate() + offsetDays);
@@ -272,7 +280,7 @@ export function reducer(st, a) {
       const kidPrev = kidPrev0;
       const dayLog = kidPrev.activityLog?.[dateKey] || [];
       const entry = {
-        id: Date.now(),
+        id: makeLocalId("taskDone"),
         type: "taskDone",
         taskId,
         taskName: task?.name,
@@ -291,7 +299,7 @@ export function reducer(st, a) {
         },
       };
       const notif = {
-        id: Date.now(),
+        id: makeLocalId("notif"),
         kidId,
         taskId,
         time: new Date().toLocaleTimeString("es-ES"),
@@ -421,7 +429,7 @@ export function reducer(st, a) {
           ...kid,
           messages: [
             {
-              id: Date.now(),
+              id: makeLocalId("msg"),
               from: "parent",
               text: message,
               date: new Date().toLocaleTimeString("es-ES"),
@@ -452,7 +460,7 @@ export function reducer(st, a) {
       });
       const dayLog = kid.activityLog?.[dateKey] || [];
       const entry = {
-        id: Date.now(),
+        id: makeLocalId("taskApproved"),
         type: "taskApproved",
         taskId,
         taskName: task?.name,
@@ -470,7 +478,7 @@ export function reducer(st, a) {
         n.id === notifId ? { ...n, read: true } : n,
       );
       const logEntry = {
-        id: Date.now(),
+        id: makeLocalId("approval"),
         kidId,
         taskId,
         taskName: task?.name,
@@ -510,7 +518,7 @@ export function reducer(st, a) {
           ...kid,
           messages: [
             {
-              id: Date.now(),
+              id: makeLocalId("msg"),
               from: "parent",
               text: msgText,
               date: new Date().toLocaleTimeString("es-ES"),
@@ -521,7 +529,7 @@ export function reducer(st, a) {
         };
       }
       const logEntry = {
-        id: Date.now(),
+        id: makeLocalId("approval"),
         kidId,
         taskId,
         taskName: task?.name,
